@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trap Chat — Chat + Compete</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/landing.css') }}">
+</head>
+<body>
+    <div class="landing-container">
+        <header class="landing-header">
+            <h1 class="logo">Trap Chat</h1>
+            <p class="tagline">Chat Roulette + Competitive Minigames</p>
+        </header>
+
+        <main class="landing-main">
+            <section class="mode-select">
+                <div class="mode-card" data-mode="chat">
+                    <div class="mode-icon">💬</div>
+                    <h2>Chat</h2>
+                    <p>Random video/text chat. Make friends, Omegle style.</p>
+                </div>
+                <div class="mode-card" data-mode="competitive">
+                    <div class="mode-icon">🏆</div>
+                    <h2>Competitive</h2>
+                    <p>1v1 & FFA games: push-ups, rap battles, symmetry, mog, and more.</p>
+                </div>
+            </section>
+
+            <div class="auth-section">
+                <h3>Enter to Play</h3>
+                <div class="auth-buttons">
+                    <button id="btn-guest" class="btn btn-primary">Enter as Guest</button>
+                    <button id="btn-login" class="btn btn-secondary">Login</button>
+                    <button id="btn-register" class="btn btn-secondary">Register</button>
+                </div>
+            </div>
+        </main>
+
+        <footer class="landing-footer">
+            <p>No account needed for quick play. Account unlocks leaderboards, local matchmaking, preferences.</p>
+        </footer>
+    </div>
+
+    <!-- Auth Modals -->
+    <div id="modal-login" class="modal hidden">
+        <div class="modal-content">
+            <h3>Login</h3>
+            <form id="form-login">
+                <input type="text" name="username" placeholder="Username" required>
+                <input type="password" name="password" placeholder="Password" required>
+                <button type="submit" class="btn btn-primary">Login</button>
+            </form>
+            <button class="modal-close">×</button>
+        </div>
+    </div>
+
+    <div id="modal-register" class="modal hidden">
+        <div class="modal-content">
+            <h3>Register</h3>
+            <form id="form-register">
+                <input type="text" name="username" placeholder="Username" required>
+                <input type="email" name="email" placeholder="Email (optional)">
+                <input type="password" name="password" placeholder="Password" required>
+                <button type="submit" class="btn btn-primary">Create Account</button>
+            </form>
+            <button class="modal-close">×</button>
+        </div>
+    </div>
+
+    <script type="module" src="{{ url_for('static', filename='js/landing.js') }}"></script>
+</body>
+</html>
