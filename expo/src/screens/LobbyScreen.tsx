@@ -1,7 +1,7 @@
 // Trap Chat — Lobby Screen
 // Tiled layout: Chat mode | Competitive mode
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, ActivityIndicator } from 'react-native';
 import { useApp } from '../context/AppContext';
 import { GameSlug } from '../types';
@@ -20,7 +20,7 @@ const GAME_LABELS: Record<GameSlug, { title: string; subtitle: string; icon: str
 };
 
 export function LobbyScreen({ navigation }: { navigation: any }) {
-  const { state, startSearch, logout } = useApp();
+  const { state, startSearch, guest, logout } = useApp();
   const isSearching = state.isSearching;
   const [selectedMode, setSelectedMode] = useState<'chat' | 'competitive'>('chat');
 
@@ -29,6 +29,18 @@ export function LobbyScreen({ navigation }: { navigation: any }) {
       await startSearch(gameSlug);
     } catch (err: any) {
       Alert.alert('Matchmaking Error', err.message || 'Could not start match');
+    }
+  };
+
+  const handleChat = () => {
+    Alert.alert('Coming next', 'Video chat matchmaking is connected to the same game queue and is being wired into the room screen.');
+  };
+
+  const handleGuest = async () => {
+    try {
+      await guest();
+    } catch (err: any) {
+      Alert.alert('Guest mode unavailable', err.message || 'Could not create a guest session');
     }
   };
 
@@ -72,7 +84,7 @@ export function LobbyScreen({ navigation }: { navigation: any }) {
       {/* Chat Mode Content */}
       {selectedMode === 'chat' && (
         <View style={styles.section}>
-          <TouchableOpacity style={styles.bigCard}>
+          <TouchableOpacity style={styles.bigCard} onPress={handleChat}>
             <Text style={styles.cardIcon}>💬</Text>
             <Text style={styles.cardTitle}>Random Chat</Text>
             <Text style={styles.cardSubtitle}>Video chat with random players</Text>

@@ -18,8 +18,8 @@ import {
   AuthState,
 } from '../types';
 
-const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:5000';
-const SOCKET_URL = process.env.EXPO_PUBLIC_SOCKET_URL || 'http://localhost:5000';
+const API_BASE = process.env.EXPO_PUBLIC_API_URL || (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5000');
+const SOCKET_URL = process.env.EXPO_PUBLIC_SOCKET_URL || (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5000');
 
 class ApiService {
   private socket: Socket | null = null;

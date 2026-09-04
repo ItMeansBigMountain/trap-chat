@@ -8,6 +8,7 @@ from flask import Flask, request, jsonify, render_template, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
 from flask_socketio import SocketIO, emit, join_room, leave_room
+from flask_cors import CORS
 import jwt
 
 # Config
@@ -20,6 +21,7 @@ app = Flask(__name__, static_folder='static', template_folder='templates')
 app.config['SQLALCHEMY_DATABASE_URI'] = DB_PATH
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = SECRET_KEY
+CORS(app, supports_credentials=True, origins=os.environ.get('FRONTEND_ORIGIN', '*'))
 
 db = SQLAlchemy(app)
 bcrypt = Bcrypt(app)
@@ -269,7 +271,7 @@ def api_register():
     db.session.commit()
     token = u.to_token()
     resp = jsonify({'user': {'id': u.id, 'username': u.username}})
-    resp.set_cookie('auth_token', token, httponly=True, secure=False, samesite='Lax', max_age=JWT_EXP_HOURS*3600)
+    resp.set_cookie('auth_token', token, httponly=True, secure=bool(os.environ.get('VERCEL')), samesite='None' if os.environ.get('VERCEL') else 'Lax', max_age=JWT_EXP_HOURS*3600)
     return resp
 
 
@@ -283,7 +285,7 @@ def api_login():
         return jsonify({'error': 'invalid credentials'}), 401
     token = u.to_token()
     resp = jsonify({'user': {'id': u.id, 'username': u.username}})
-    resp.set_cookie('auth_token', token, httponly=True, secure=False, samesite='Lax', max_age=JWT_EXP_HOURS*3600)
+    resp.set_cookie('auth_token', token, httponly=True, secure=bool(os.environ.get('VERCEL')), samesite='None' if os.environ.get('VERCEL') else 'Lax', max_age=JWT_EXP_HOURS*3600)
     return resp
 
 
@@ -291,7 +293,7 @@ def api_login():
 def api_guest():
     session_id = f'guest_{uuid.uuid4().hex[:12]}'
     resp = jsonify({'guest_session_id': session_id, 'display_name': f'Guest_{session_id[-4:]}'})
-    resp.set_cookie('guest_session', session_id, httponly=True, secure=False, samesite='Lax', max_age=3600)
+    resp.set_cookie('guest_session', session_id, httponly=True, secure=bool(os.environ.get('VERCEL')), samesite='None' if os.environ.get('VERCEL') else 'Lax', max_age=3600)
     return resp
 
 

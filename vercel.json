@@ -1,5 +1,12 @@
 {
   "buildCommand": "cd expo && npm ci && npx expo export --platform web",
   "outputDirectory": "expo/dist",
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/index.py" },
+    { "source": "/socket.io/(.*)", "destination": "/api/index.py" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ],
+  "functions": {
+    "api/index.py": { "runtime": "python3.12" }
+  }
 }
