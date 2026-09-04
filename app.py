@@ -25,7 +25,7 @@ CORS(app, supports_credentials=True, origins=os.environ.get('FRONTEND_ORIGIN', '
 
 db = SQLAlchemy(app)
 bcrypt = Bcrypt(app)
-socketio = SocketIO(app, cors_allowed_origins='*', async_mode='eventlet')
+socketio = SocketIO(app, cors_allowed_origins='*', async_mode='threading')
 
 # -------------------------
 # Models
