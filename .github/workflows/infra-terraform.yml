@@ -22,8 +22,9 @@ permissions:
   pull-requests: write
 
 env:
-  ARM_USE_OIDC: true
+  ARM_USE_OIDC: false
   ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+  ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
   ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
   ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
   TF_IN_AUTOMATION: true
@@ -50,6 +51,7 @@ jobs:
       - uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
+          enable-AzPSSession: false
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.9.8
