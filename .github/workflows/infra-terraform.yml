@@ -56,7 +56,7 @@ jobs:
       - name: Terraform fmt
         run: terraform fmt -check -recursive
       - name: Terraform init
-        run: terraform init -backend-config=backend.tf -backend-config=use_azuread_auth=true
+        run: terraform init -backend-config=use_azuread_auth=true
       - name: Import pre-existing Azure resources into Terraform state
         shell: bash
         run: |
