@@ -48,5 +48,4 @@ jobs:
           app_location: frontend/expo
           output_location: dist
           skip_app_build: true
-          skip_api_build: true
-          config_file_location: frontend/expo
+          app_artifact_location: frontend/expo/dist
