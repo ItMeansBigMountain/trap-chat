@@ -1,0 +1,6 @@
+{
+  "buildCommand": "npm ci && npm run build:web",
+  "outputDirectory": "dist",
+  "installCommand": "npm ci",
+  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+}

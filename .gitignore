@@ -6,3 +6,4 @@ trapchat.db
 .env
 node_modules
 .instagraz
+.vercel

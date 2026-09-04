@@ -28,6 +28,10 @@ db = SQLAlchemy(app)
 bcrypt = Bcrypt(app)
 socketio = SocketIO(app, cors_allowed_origins='*', async_mode='threading')
 
+@app.get('/health')
+def health():
+    return jsonify({'ok': True, 'service': 'trap-chat-backend'})
+
 # -------------------------
 # Models
 # -------------------------

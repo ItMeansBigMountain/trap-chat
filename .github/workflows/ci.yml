@@ -7,36 +7,35 @@ on:
     branches: [main]
 
 jobs:
-  web-build:
+  frontend:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: expo
+        working-directory: frontend/expo
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: expo/package-lock.json
+          cache-dependency-path: frontend/expo/package-lock.json
       - run: npm ci
       - run: npx tsc --noEmit
-      - run: npx expo export --platform web
+      - run: npm run build:web
         env:
-          EXPO_PUBLIC_API_URL: https://trap-chat-api.vercel.app
-          EXPO_PUBLIC_SOCKET_URL: https://trap-chat-api.vercel.app
+          EXPO_PUBLIC_API_URL: https://YOUR_BACKEND_HOST
+          EXPO_PUBLIC_SOCKET_URL: https://YOUR_BACKEND_HOST
 
-  python-backend:
+  backend:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: .
+        working-directory: backend
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - run: python -m pip install -r requirements.txt
-        working-directory: .
-      - run: python -m py_compile app.py
-        working-directory: .
+      - run: python -m py_compile app.py api/index.py
+      - run: python -c "from app import app; client=app.test_client(); r=client.get('/health'); assert r.status_code == 200; print(r.json)"
