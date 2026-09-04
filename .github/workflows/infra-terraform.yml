@@ -1,0 +1,73 @@
+name: Terraform Azure Infrastructure
+
+on:
+  pull_request:
+    paths:
+      - 'infra/terraform/**'
+      - '.github/workflows/infra-terraform.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'infra/terraform/**'
+      - '.github/workflows/infra-terraform.yml'
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: Apply the reviewed Terraform plan
+        type: boolean
+        default: false
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+env:
+  ARM_USE_OIDC: true
+  ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+  ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+  TF_IN_AUTOMATION: true
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    environment: infra-prod
+    defaults:
+      run:
+        working-directory: infra/terraform
+    steps:
+      - uses: actions/checkout@v4
+      - name: Preflight OIDC variables
+        shell: bash
+        env:
+          CLIENT: ${{ vars.AZURE_CLIENT_ID }}
+          TENANT: ${{ vars.AZURE_TENANT_ID }}
+          SUBSCRIPTION: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+        run: |
+          for value in CLIENT TENANT SUBSCRIPTION; do
+            test -n "${!value}" || { echo "::error::$value is missing"; exit 1; }
+          done
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+      - name: Terraform fmt
+        run: terraform fmt -check -recursive
+      - name: Terraform init
+        run: terraform init -backend=false
+      - name: Terraform validate
+        run: terraform validate
+      - name: Terraform plan
+        run: terraform plan -var-file=env/prod.tfvars -out=tfplan
+      - uses: actions/upload-artifact@v4
+        with:
+          name: trap-chat-terraform-plan
+          path: infra/terraform/tfplan
+      - name: Terraform apply
+        if: github.event_name == 'workflow_dispatch' && inputs.apply == true
+        run: terraform apply -auto-approve tfplan
