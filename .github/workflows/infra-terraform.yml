@@ -54,7 +54,9 @@ jobs:
         with:
           terraform_version: 1.9.8
       - name: Terraform fmt
-        run: terraform fmt -check -recursive
+        run: terraform fmt -recursive
+      - name: Terraform fmt check
+        run: git diff --exit-code -- infra/terraform
       - name: Terraform init
         run: terraform init -backend-config=use_azuread_auth=true
       - name: Import pre-existing Azure resources into Terraform state
