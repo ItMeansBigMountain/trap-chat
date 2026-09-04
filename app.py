@@ -13,7 +13,8 @@ import jwt
 
 # Config
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-DB_PATH = os.environ.get('DATABASE_URL', f'sqlite:///{os.path.join(BASE_DIR, "trapchat.db")}')
+DEFAULT_DB_PATH = '/tmp/trapchat.db' if os.environ.get('VERCEL') else os.path.join(BASE_DIR, 'trapchat.db')
+DB_PATH = os.environ.get('DATABASE_URL', f'sqlite:///{DEFAULT_DB_PATH}')
 SECRET_KEY = os.environ.get('SECRET_KEY', 'dev-secret-change-in-production')
 JWT_EXP_HOURS = 24 * 30  # 30 days
 
