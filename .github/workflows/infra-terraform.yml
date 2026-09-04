@@ -18,7 +18,6 @@ on:
         default: false
 
 permissions:
-  id-token: write
   contents: read
   pull-requests: write
 
@@ -50,16 +49,19 @@ jobs:
           done
       - uses: azure/login@v2
         with:
-          client-id: ${{ vars.AZURE_CLIENT_ID }}
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.9.8
       - name: Terraform fmt
         run: terraform fmt -check -recursive
       - name: Terraform init
-        run: terraform init -backend=false
+        run: terraform init -backend-config=backend.tf -backend-config=use_azuread_auth=true
+      - name: Import pre-existing Azure resources into Terraform state
+        shell: bash
+        run: |
+          terraform state list | grep -q 'azurerm_resource_group.trap_chat' || terraform import azurerm_resource_group.trap_chat "/subscriptions/${{ vars.AZURE_SUBSCRIPTION_ID }}/resourceGroups/rg-trap-chat-prod"
+          terraform state list | grep -q 'azurerm_static_web_app.frontend' || terraform import azurerm_static_web_app.frontend "/subscriptions/${{ vars.AZURE_SUBSCRIPTION_ID }}/resourceGroups/rg-trap-chat-prod/providers/Microsoft.Web/staticSites/stapp-trap-chat-prod"
       - name: Terraform validate
         run: terraform validate
       - name: Terraform plan
