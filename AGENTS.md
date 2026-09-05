@@ -70,6 +70,16 @@ Always read the plan for destroys before approving.
   share is only safe with one writer, and Socket.IO keeps room and match
   state in process memory. Do not raise `max_replicas` without first
   moving that state out of process and off SQLite.
+- **The Azure Files volume is mounted `nobrl`.** SQLite coordinates writers
+  with POSIX byte-range locks, which Azure Files over SMB does not implement
+  reliably; without `nobrl` every write fails with `database is locked` and
+  the Gunicorn worker dies before binding a port. This is only safe because
+  there is exactly one replica running one worker. Raising either without
+  first moving off SQLite risks database corruption, not just contention.
+- **Terraform seeds the initial container image; `backend CICD` owns
+  rollouts.** The image is under `lifecycle.ignore_changes`, so an infra
+  apply will not reset the running container to `var.backend_image` and
+  silently undo the most recent application deploy.
 - **The backend image is a public GHCR image**
   (`ghcr.io/itmeansbigmountain/trap-chat-backend`), pulled anonymously, so
   no registry credential is stored in Terraform state.

@@ -154,6 +154,23 @@ resource "azurerm_container_app" "backend" {
       name         = "backend-data"
       storage_name = azurerm_container_app_environment_storage.backend_data.name
       storage_type = "AzureFile"
+
+      # SQLite coordinates writers with POSIX byte-range locks, which Azure
+      # Files over SMB does not implement reliably: every write then fails
+      # with "database is locked" and the worker dies at startup. nobrl skips
+      # those locks, which is safe here only because this app is pinned to a
+      # single replica running a single Gunicorn worker, so there is never
+      # more than one writing process. Revisit this before raising
+      # max_replicas or the worker count.
+      mount_options = "nobrl,dir_mode=0777,file_mode=0777"
     }
+  }
+
+  lifecycle {
+    # backend CICD rolls out immutable per-commit image tags. Terraform only
+    # seeds the initial image, so without this every infra apply would reset
+    # the running container to var.backend_image and silently undo the most
+    # recent application deploy.
+    ignore_changes = [template[0].container[0].image]
   }
 }

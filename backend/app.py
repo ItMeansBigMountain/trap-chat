@@ -1,9 +1,12 @@
 import os
 import json
+import time
 import uuid
 import re
 from datetime import datetime, timedelta
 from functools import wraps
+
+from sqlalchemy.exc import OperationalError
 
 from flask import Flask, request, jsonify, render_template, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
@@ -22,6 +25,17 @@ JWT_EXP_HOURS = 24 * 30  # 30 days
 app = Flask(__name__, static_folder='static', template_folder='templates')
 app.config['SQLALCHEMY_DATABASE_URI'] = DB_PATH
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+if DB_PATH.startswith('sqlite'):
+    # In production this SQLite file lives on an Azure Files share, where a
+    # restarting revision can still be holding the write lock. The pysqlite
+    # default gives up after 5 seconds and raises "database is locked", which
+    # kills the Gunicorn worker before it ever binds a port. Wait instead.
+    # check_same_thread is required because Gunicorn serves requests from a
+    # thread pool, so pooled connections move between threads.
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+        'connect_args': {'timeout': 30, 'check_same_thread': False},
+        'pool_pre_ping': True,
+    }
 app.config['SECRET_KEY'] = SECRET_KEY
 FRONTEND_ORIGIN = os.environ.get('FRONTEND_ORIGIN')
 if FRONTEND_ORIGIN:
@@ -252,12 +266,36 @@ DEFAULT_GAMES = [
     {'slug': 'ffa', 'name': 'Generic FFA', 'max_players': 20, 'is_1v1': False, 'default_time_sec': 0},
 ]
 
-with app.app_context():
-    db.create_all()
-    for g in DEFAULT_GAMES:
-        if not Game.query.filter_by(slug=g['slug']).first():
-            db.session.add(Game(**g))
-    db.session.commit()
+def _initialize_database(attempts=12, delay=5):
+    """Create tables and seed the game catalog.
+
+    A redeploy briefly overlaps the outgoing and incoming revisions, and both
+    mount the same Azure Files share. Retry rather than letting a transient
+    lock during schema creation take the whole worker down.
+    """
+    last_error = None
+    for attempt in range(1, attempts + 1):
+        try:
+            with app.app_context():
+                db.create_all()
+                for g in DEFAULT_GAMES:
+                    if not Game.query.filter_by(slug=g['slug']).first():
+                        db.session.add(Game(**g))
+                db.session.commit()
+            return
+        except OperationalError as exc:
+            last_error = exc
+            with app.app_context():
+                db.session.rollback()
+            app.logger.warning(
+                'database not ready, attempt %s/%s: %s', attempt, attempts, exc
+            )
+            if attempt < attempts:
+                time.sleep(delay)
+    raise last_error
+
+
+_initialize_database()
 
 
 # -------------------------
