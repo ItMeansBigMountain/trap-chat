@@ -4,6 +4,7 @@ import { NavigationContainer, DarkTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { AppProvider, useApp } from './src/context/AppContext';
 import { LobbyScreen } from './src/screens/LobbyScreen';
+import { AuthScreen } from './src/screens/AuthScreen';
 import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 
 const Stack = createNativeStackNavigator();
@@ -15,7 +16,11 @@ function AppNavigator() {
   }
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="Lobby" component={LobbyScreen} />
+      {state.auth.status === 'unauthenticated' ? (
+        <Stack.Screen name="Auth" component={AuthScreen} />
+      ) : (
+        <Stack.Screen name="Lobby" component={LobbyScreen} />
+      )}
     </Stack.Navigator>
   );
 }

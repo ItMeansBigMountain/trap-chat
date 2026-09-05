@@ -1,6 +1,7 @@
 import os
 import json
 import uuid
+import re
 from datetime import datetime, timedelta
 from functools import wraps
 
@@ -22,7 +23,21 @@ app = Flask(__name__, static_folder='static', template_folder='templates')
 app.config['SQLALCHEMY_DATABASE_URI'] = DB_PATH
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = SECRET_KEY
-CORS(app, supports_credentials=True, origins=os.environ.get('FRONTEND_ORIGIN', '*'))
+FRONTEND_ORIGIN = os.environ.get('FRONTEND_ORIGIN')
+if FRONTEND_ORIGIN:
+    CORS(app, supports_credentials=True, origins=FRONTEND_ORIGIN)
+else:
+    CORS(app)
+
+
+def cookie_options():
+    cross_origin = bool(FRONTEND_ORIGIN)
+    return {
+        'httponly': True,
+        'secure': cross_origin,
+        'samesite': 'None' if cross_origin else 'Lax',
+        'max_age': JWT_EXP_HOURS * 3600,
+    }
 
 db = SQLAlchemy(app)
 bcrypt = Bcrypt(app)
@@ -76,7 +91,7 @@ class User(db.Model):
     def from_token(token):
         try:
             payload = jwt.decode(token, SECRET_KEY, algorithms=['HS256'])
-            return User.query.get(payload['uid'])
+            return db.session.get(User, payload['uid'])
         except Exception:
             return None
 
@@ -196,11 +211,19 @@ def guest_or_auth(f):
                 request.user = user
                 request.guest = False
                 return f(*args, **kwargs)
-        # guest
+
+        guest_session = request.cookies.get('guest_session')
+        if not guest_session:
+            return jsonify({'error': 'guest session required'}), 401
+
         request.user = None
         request.guest = True
         return f(*args, **kwargs)
     return wrapper
+
+
+def match_player_count(match):
+    return MatchPlayer.query.filter_by(match_id=match.id).count()
 
 
 def gen_room_code():
@@ -281,6 +304,10 @@ def api_register():
     password = data.get('password') or ''
     if not username or not password:
         return jsonify({'error': 'username and password required'}), 400
+    if not re.fullmatch(r'[A-Za-z0-9_-]{3,50}', username):
+        return jsonify({'error': 'username must be 3-50 letters, numbers, _ or -'}), 400
+    if len(password) < 8:
+        return jsonify({'error': 'password must be at least 8 characters'}), 400
     if User.query.filter_by(username=username).first():
         return jsonify({'error': 'username taken'}), 400
     if email and User.query.filter_by(email=email).first():
@@ -291,7 +318,7 @@ def api_register():
     db.session.commit()
     token = u.to_token()
     resp = jsonify({'user': {'id': u.id, 'username': u.username}})
-    resp.set_cookie('auth_token', token, httponly=True, secure=bool(os.environ.get('VERCEL')), samesite='None' if os.environ.get('VERCEL') else 'Lax', max_age=JWT_EXP_HOURS*3600)
+    resp.set_cookie('auth_token', token, **cookie_options())
     return resp
 
 
@@ -305,7 +332,7 @@ def api_login():
         return jsonify({'error': 'invalid credentials'}), 401
     token = u.to_token()
     resp = jsonify({'user': {'id': u.id, 'username': u.username}})
-    resp.set_cookie('auth_token', token, httponly=True, secure=bool(os.environ.get('VERCEL')), samesite='None' if os.environ.get('VERCEL') else 'Lax', max_age=JWT_EXP_HOURS*3600)
+    resp.set_cookie('auth_token', token, **cookie_options())
     return resp
 
 
@@ -313,7 +340,9 @@ def api_login():
 def api_guest():
     session_id = f'guest_{uuid.uuid4().hex[:12]}'
     resp = jsonify({'guest_session_id': session_id, 'display_name': f'Guest_{session_id[-4:]}'})
-    resp.set_cookie('guest_session', session_id, httponly=True, secure=bool(os.environ.get('VERCEL')), samesite='None' if os.environ.get('VERCEL') else 'Lax', max_age=3600)
+    options = cookie_options()
+    options['max_age'] = 3600
+    resp.set_cookie('guest_session', session_id, **options)
     return resp
 
 
@@ -384,29 +413,56 @@ def api_quick_match():
     if not game.is_1v1:
         return jsonify({'error': 'quick match only for 1v1 games'}), 400
 
-    # Find waiting match or create new
-    waiting = Match.query.filter_by(game_id=game.id, status='waiting').filter(Match.host_user_id != (request.user.id if request.user else -1)).first()
+    guest_session = request.cookies.get('guest_session')
+    identity_filter = (
+        MatchPlayer.user_id == request.user.id
+        if request.user else MatchPlayer.guest_session_id == guest_session
+    )
+    existing = (
+        Match.query.join(MatchPlayer)
+        .filter(Match.game_id == game.id, Match.status == 'waiting', identity_filter)
+        .first()
+    )
+    if existing:
+        return jsonify({
+            'match_id': existing.id,
+            'room_code': existing.room_code,
+            'game': game.slug,
+            'status': existing.status,
+            'players': [p.display_name for p in existing.players],
+        })
+
+    # Find a waiting match the caller has not already joined, or create one.
+    waiting = Match.query.filter_by(game_id=game.id, status='waiting').filter(
+        ~Match.players.any(identity_filter)
+    ).first()
     if waiting:
         match = waiting
     else:
         match = Match(game_id=game.id, room_code=gen_room_code(), host_user_id=request.user.id if request.user else None, status='waiting')
         db.session.add(match)
-        db.session.commit()
+        db.session.flush()
 
-    # Add player
-    display = request.user.username if request.user else f'Guest_{request.cookies.get("guest_session", "anon")[-4:]}'
-    mp = MatchPlayer(match_id=match.id, user_id=request.user.id if request.user else None, guest_session_id=request.cookies.get('guest_session') if not request.user else None, display_name=display)
-    db.session.add(mp)
-    db.session.commit()
+    display = request.user.username if request.user else f'Guest_{guest_session[-4:]}'
+    db.session.add(MatchPlayer(
+        match_id=match.id,
+        user_id=request.user.id if request.user else None,
+        guest_session_id=guest_session if not request.user else None,
+        display_name=display,
+    ))
+    db.session.flush()
 
-    # If 2 players, start
-    if len(match.players) >= 2:
+    # If 2 players, start.
+    if match_player_count(match) >= 2:
         match.status = 'active'
         match.started_at = datetime.utcnow()
         db.session.commit()
         socketio.emit('match_start', {'match_id': match.id, 'room_code': match.room_code, 'game': game.slug}, to=f'match_{match.id}')
+    else:
+        db.session.commit()
 
-    return jsonify({'match_id': match.id, 'room_code': match.room_code, 'game': game.slug, 'status': match.status, 'players': [p.display_name for p in match.players]})
+    players = MatchPlayer.query.filter_by(match_id=match.id).all()
+    return jsonify({'match_id': match.id, 'room_code': match.room_code, 'game': game.slug, 'status': match.status, 'players': [p.display_name for p in players]})
 
 
 @app.route('/api/rooms', methods=['GET'])

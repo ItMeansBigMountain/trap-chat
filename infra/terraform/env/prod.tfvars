@@ -8,4 +8,5 @@ budget_contact_emails   = []
 
 app_service_plan_name = "asp-trap-chat-prod"
 app_service_name      = "trap-chat-api"
-app_service_sku       = "B1"
+# Azure preview tier. Raise to B1+ only after the subscription quota is granted.
+app_service_sku       = "F1"
