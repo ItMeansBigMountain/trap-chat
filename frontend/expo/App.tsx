@@ -5,6 +5,8 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { AppProvider, useApp } from './src/context/AppContext';
 import { LobbyScreen } from './src/screens/LobbyScreen';
 import { AuthScreen } from './src/screens/AuthScreen';
+import { RoomsScreen } from './src/screens/RoomsScreen';
+import { MatchScreen } from './src/screens/MatchScreen';
 import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 
 const Stack = createNativeStackNavigator();
@@ -18,8 +20,16 @@ function AppNavigator() {
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       {state.auth.status === 'unauthenticated' ? (
         <Stack.Screen name="Auth" component={AuthScreen} />
+      ) : state.currentMatch ? (
+        // An active match takes over the whole stack, so matchmaking and room
+        // joins both land here without any imperative navigation. Leaving the
+        // match clears it and drops back to the lobby.
+        <Stack.Screen name="Match" component={MatchScreen} />
       ) : (
-        <Stack.Screen name="Lobby" component={LobbyScreen} />
+        <>
+          <Stack.Screen name="Lobby" component={LobbyScreen} />
+          <Stack.Screen name="Rooms" component={RoomsScreen} />
+        </>
       )}
     </Stack.Navigator>
   );

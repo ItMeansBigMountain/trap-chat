@@ -535,13 +535,41 @@ def api_join_room(code):
     if room.status != 'open':
         return jsonify({'error': 'room not open'}), 400
     display = request.user.username if request.user else f'Guest_{request.cookies.get("guest_session", "anon")[-4:]}'
-    # Create a match for this room
-    match = Match(game_id=room.game_id, room_code=room.code, host_user_id=room.host_user_id, settings_json=room.settings_json, status='active', started_at=datetime.utcnow())
-    db.session.add(match)
-    db.session.commit()
-    mp = MatchPlayer(match_id=match.id, user_id=request.user.id if request.user else None, guest_session_id=request.cookies.get('guest_session') if not request.user else None, display_name=display)
-    db.session.add(mp)
-    db.session.commit()
+
+    # A room has exactly one match, reused by everyone who joins. Match.room_code
+    # is unique, so minting a fresh Match per join made the second player fail
+    # with an IntegrityError and left the first alone in the room.
+    match = Match.query.filter_by(room_code=room.code).first()
+    if match is None:
+        match = Match(
+            game_id=room.game_id,
+            room_code=room.code,
+            host_user_id=room.host_user_id,
+            settings_json=room.settings_json,
+            status='active',
+            started_at=datetime.utcnow(),
+        )
+        db.session.add(match)
+        db.session.commit()
+
+    guest_session = request.cookies.get('guest_session') if not request.user else None
+    identity_filter = (
+        MatchPlayer.user_id == request.user.id
+        if request.user else MatchPlayer.guest_session_id == guest_session
+    )
+    # Rejoining after a reconnect must not add the same person twice.
+    existing = MatchPlayer.query.filter(
+        MatchPlayer.match_id == match.id, identity_filter
+    ).first()
+    if existing is None:
+        db.session.add(MatchPlayer(
+            match_id=match.id,
+            user_id=request.user.id if request.user else None,
+            guest_session_id=guest_session,
+            display_name=display,
+        ))
+        db.session.commit()
+
     return jsonify({'match_id': match.id, 'room_code': room.code, 'game': room.game.slug})
 
 

@@ -126,6 +126,16 @@ class ApiService {
     this.socket = null;
   }
 
+  // The server identifies a socket from the cookies sent on its handshake, and
+  // those are fixed when the connection opens. A socket opened before sign-in
+  // therefore stays anonymous for its whole life, and every join_match on it is
+  // rejected with "not a player in this match". Reconnect after the session
+  // changes so the new handshake carries the auth cookie.
+  reconnect(): Socket {
+    this.disconnect();
+    return this.connect();
+  }
+
   getSocket(): Socket | null { return this.socket; }
   joinMatch(matchId: number): void { this.socket?.emit('join_match', { match_id: matchId }); }
   leaveMatch(matchId: number): void { this.socket?.emit('leave_match', { match_id: matchId }); }

@@ -68,10 +68,41 @@ interface AppContextValue {
   // Matchmaking
   startSearch: (gameSlug: GameSlug) => Promise<void>;
   cancelSearch: () => void;
+  // Rooms
+  createRoom: (gameSlug: GameSlug) => Promise<string>;
+  joinRoomByCode: (code: string) => Promise<void>;
   submitResult: (matchId: number, result: GameResult) => Promise<void>;
   // Match
   joinMatch: (matchId: number) => void;
   leaveMatch: () => void;
+}
+
+// Socket listeners live outside the component so they can be re-attached after
+// a reconnect, which replaces the underlying socket instance.
+function attachSocketListeners(dispatch: React.Dispatch<Action>) {
+  api.onMatchStart(({ match_id, room_code, game }) => {
+    dispatch({ type: 'SET_MATCH', payload: {
+      id: match_id,
+      room_code,
+      game_id: 0,
+      status: 'active',
+      created_at: new Date().toISOString(),
+      settings: {},
+      game: { id: 0, slug: game, name: game, max_players: 2, is_1v1: true, default_time_sec: 60 }
+    }});
+    dispatch({ type: 'SET_SEARCHING', payload: { isSearching: false, game: null } });
+  });
+  api.onMatchFinished(({ results }) => console.log('[Match] Finished:', results));
+  api.onPlayerJoined(({ player }) => console.log('[Match] Player joined:', player));
+  api.onPlayerLeft(({ player_id }) => console.log('[Match] Player left:', player_id));
+  api.onError(({ message }) => console.error('[Socket] Error:', message));
+}
+
+// Re-open the socket so its handshake carries the cookies of the session that
+// now exists, then re-attach listeners to the new instance.
+function resyncSocket(dispatch: React.Dispatch<Action>) {
+  api.reconnect();
+  attachSocketListeners(dispatch);
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -102,36 +133,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
         // Connect socket
         api.connect();
-
-        // Socket listeners
-        api.onMatchStart(({ match_id, room_code, game }) => {
-          dispatch({ type: 'SET_MATCH', payload: { 
-            id: match_id, 
-            room_code, 
-            game_id: 0, 
-            status: 'active',
-            created_at: new Date().toISOString(),
-            settings: {},
-            game: { id: 0, slug: game, name: game, max_players: 2, is_1v1: true, default_time_sec: 60 }
-          }});
-          dispatch({ type: 'SET_SEARCHING', payload: { isSearching: false, game: null } });
-        });
-
-        api.onMatchFinished(({ results }) => {
-          console.log('[Match] Finished:', results);
-        });
-
-        api.onPlayerJoined(({ player }) => {
-          console.log('[Match] Player joined:', player);
-        });
-
-        api.onPlayerLeft(({ player_id }) => {
-          console.log('[Match] Player left:', player_id);
-        });
-
-        api.onError(({ message }) => {
-          console.error('[Socket] Error:', message);
-        });
+        attachSocketListeners(dispatch);
 
       } catch (err) {
         console.error('[App] Init error:', err);
@@ -150,21 +152,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const login = useCallback(async (username: string, password: string) => {
     const { user } = await api.login(username, password);
     dispatch({ type: 'SET_AUTH', payload: { status: 'authenticated', user } });
+    resyncSocket(dispatch);
   }, []);
 
   const register = useCallback(async (username: string, email: string | undefined, password: string) => {
     const { user } = await api.register(username, email, password);
     dispatch({ type: 'SET_AUTH', payload: { status: 'authenticated', user } });
+    resyncSocket(dispatch);
   }, []);
 
   const guest = useCallback(async () => {
     const session = await api.guest();
     dispatch({ type: 'SET_AUTH', payload: { status: 'guest', session } });
+    resyncSocket(dispatch);
   }, []);
 
   const logout = useCallback(async () => {
     await api.logout();
     dispatch({ type: 'LOGOUT' });
+    resyncSocket(dispatch);
   }, []);
 
   // Location
@@ -197,11 +203,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     dispatch({ type: 'SET_SEARCHING', payload: { isSearching: true, game: gameSlug } });
     try {
       const result = await api.quickMatch({ game_slug: gameSlug });
-      
+
+      // Join the socket room immediately, even while still waiting. The server
+      // emits 'match_start' to that room when the second player arrives, so a
+      // player who has not joined it never learns their match began and waits
+      // forever.
+      api.joinMatch(result.match_id);
+
       if (result.status === 'active') {
-        dispatch({ type: 'SET_MATCH', payload: { 
-          id: result.match_id, 
-          room_code: result.room_code, 
+        dispatch({ type: 'SET_MATCH', payload: {
+          id: result.match_id,
+          room_code: result.room_code,
           game_id: 0,
           status: 'active',
           created_at: new Date().toISOString(),
@@ -209,14 +221,42 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           game: { id: 0, slug: result.game, name: result.game, max_players: 2, is_1v1: true, default_time_sec: 60 }
         }});
         dispatch({ type: 'SET_SEARCHING', payload: { isSearching: false, game: null } });
-        api.joinMatch(result.match_id);
       }
-      // If 'waiting', server will emit 'match_start' when second player joins
+      // If 'waiting', 'match_start' arrives over the socket room joined above.
     } catch (err) {
       console.error('[Matchmaking] Error:', err);
       dispatch({ type: 'SET_SEARCHING', payload: { isSearching: false, game: null } });
+      throw err;
     }
   }, []);
+
+  // Rooms: create a room and enter it, or join someone else's by code. Both
+  // end in the same place as matchmaking, an active match with a room code.
+  const enterMatch = useCallback((matchId: number, roomCode: string, gameSlug: GameSlug) => {
+    dispatch({ type: 'SET_MATCH', payload: {
+      id: matchId,
+      room_code: roomCode,
+      game_id: 0,
+      status: 'active',
+      created_at: new Date().toISOString(),
+      settings: {},
+      game: { id: 0, slug: gameSlug, name: gameSlug, max_players: 20, is_1v1: false, default_time_sec: 0 }
+    }});
+    dispatch({ type: 'SET_SEARCHING', payload: { isSearching: false, game: null } });
+    api.joinMatch(matchId);
+  }, []);
+
+  const createRoom = useCallback(async (gameSlug: GameSlug) => {
+    const room = await api.createRoom(gameSlug, {});
+    const joined = await api.joinRoom(room.code);
+    enterMatch(joined.match_id, joined.room_code, joined.game);
+    return room.code;
+  }, [enterMatch]);
+
+  const joinRoomByCode = useCallback(async (code: string) => {
+    const joined = await api.joinRoom(code.trim().toUpperCase());
+    enterMatch(joined.match_id, joined.room_code, joined.game);
+  }, [enterMatch]);
 
   const cancelSearch = useCallback(() => {
     dispatch({ type: 'SET_SEARCHING', payload: { isSearching: false, game: null } });
@@ -245,6 +285,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       requestLocation,
       fetchGames,
       startSearch, cancelSearch, submitResult,
+      createRoom, joinRoomByCode,
       joinMatch, leaveMatch,
     }}>
       {children}

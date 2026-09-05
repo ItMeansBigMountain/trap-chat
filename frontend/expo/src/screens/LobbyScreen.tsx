@@ -32,8 +32,8 @@ export function LobbyScreen({ navigation }: { navigation: any }) {
     }
   };
 
-  const handleChat = () => {
-    Alert.alert('Coming next', 'Video chat matchmaking is connected to the same game queue and is being wired into the room screen.');
+  const handleRooms = () => {
+    navigation.navigate('Rooms');
   };
 
   const handleGuest = async () => {
@@ -84,19 +84,27 @@ export function LobbyScreen({ navigation }: { navigation: any }) {
       {/* Chat Mode Content */}
       {selectedMode === 'chat' && (
         <View style={styles.section}>
-          <TouchableOpacity style={styles.bigCard} onPress={handleChat}>
-            <Text style={styles.cardIcon}>💬</Text>
-            <Text style={styles.cardTitle}>Random Chat</Text>
-            <Text style={styles.cardSubtitle}>Video chat with random players</Text>
-            <Text style={styles.cardNote}>Tap to start a 1v1 video room</Text>
+          <TouchableOpacity style={styles.bigCard} onPress={handleRooms}>
+            <Text style={styles.cardIcon}>🚪</Text>
+            <Text style={styles.cardTitle}>Rooms</Text>
+            <Text style={styles.cardSubtitle}>Create a room or join one by code</Text>
+            <Text style={styles.cardNote}>Tap to open rooms</Text>
           </TouchableOpacity>
-          
+
           <Text style={styles.sectionLabel}>Quick Rooms</Text>
           <View style={styles.smallCards}>
-            <TouchableOpacity style={styles.smallCard}>
+            <TouchableOpacity style={styles.smallCard} onPress={handleRooms}>
               <Text style={styles.cardIcon}>👥</Text>
-              <Text style={styles.cardTitle}>Groups</Text>
+              <Text style={styles.cardTitle}>Browse</Text>
             </TouchableOpacity>
+          </View>
+
+          {/* Video chat is not built yet. Shown as unavailable rather than as a
+              working control, so it is not mistaken for a finished feature. */}
+          <View style={[styles.bigCard, styles.unavailable]}>
+            <Text style={styles.cardIcon}>💬</Text>
+            <Text style={styles.cardTitle}>Random Video Chat</Text>
+            <Text style={styles.cardSubtitle}>Not available yet</Text>
           </View>
         </View>
       )}
@@ -116,7 +124,7 @@ export function LobbyScreen({ navigation }: { navigation: any }) {
                 <Text style={styles.gameIcon}>{GAME_LABELS[game].icon}</Text>
                 <Text style={styles.gameTitle}>{GAME_LABELS[game].title}</Text>
                 <Text style={styles.gameSub}>{GAME_LABELS[game].subtitle}</Text>
-                {isSearching && state.currentMatch?.game?.slug === game && (
+                {isSearching && state.searchGame === game && (
                   <View style={styles.searchingIndicator}>
                     <ActivityIndicator size="small" color="#4f46e5" />
                     <Text style={styles.searchingText}>Waiting for opponent...</Text>
@@ -158,6 +166,7 @@ export function LobbyScreen({ navigation }: { navigation: any }) {
 }
 
 const styles = StyleSheet.create({
+  unavailable: { opacity: 0.4 },
   container: { flex: 1, backgroundColor: '#0a0a0a' },
   content: { padding: 20, paddingBottom: 40 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0a0a0a' },
