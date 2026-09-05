@@ -16,9 +16,7 @@ resource "azurerm_static_web_app" "frontend" {
   sku_size            = "Free"
   tags                = local.tags
 
-  lifecycle {
-    ignore_changes = [repository_url, repository_branch]
-  }
+  lifecycle { ignore_changes = [repository_url, repository_branch] }
 }
 
 resource "azurerm_consumption_budget_resource_group" "trap_chat" {
@@ -27,11 +25,7 @@ resource "azurerm_consumption_budget_resource_group" "trap_chat" {
   resource_group_id = azurerm_resource_group.trap_chat.id
   amount            = var.monthly_budget_amount
   time_grain        = "Monthly"
-
-  time_period {
-    start_date = "2026-09-01T00:00:00Z"
-  }
-
+  time_period { start_date = "2026-09-01T00:00:00Z" }
   notification {
     enabled        = true
     threshold      = 50
@@ -39,7 +33,6 @@ resource "azurerm_consumption_budget_resource_group" "trap_chat" {
     threshold_type = "Actual"
     contact_emails = var.budget_contact_emails
   }
-
   notification {
     enabled        = true
     threshold      = 90
@@ -49,48 +42,114 @@ resource "azurerm_consumption_budget_resource_group" "trap_chat" {
   }
 }
 
-resource "azurerm_service_plan" "backend" {
-  name                = var.app_service_plan_name
+resource "random_password" "backend_secret" {
+  length  = 64
+  special = true
+}
+
+resource "azurerm_storage_account" "backend" {
+  name                     = var.backend_storage_account_name
+  resource_group_name      = azurerm_resource_group.trap_chat.name
+  location                 = azurerm_resource_group.trap_chat.location
+  account_tier             = "Standard"
+  account_replication_type = "LRS"
+  min_tls_version          = "TLS1_2"
+  tags                     = local.tags
+}
+
+resource "azurerm_storage_share" "backend_data" {
+  name               = "trapchat-data"
+  storage_account_id = azurerm_storage_account.backend.id
+  quota              = 1
+}
+
+resource "azurerm_container_app_environment" "backend" {
+  name                = var.container_app_environment_name
   location            = azurerm_resource_group.trap_chat.location
   resource_group_name = azurerm_resource_group.trap_chat.name
-  os_type             = "Linux"
-  sku_name            = var.app_service_sku
   tags                = local.tags
 }
 
-resource "azurerm_linux_web_app" "backend" {
-  name                = var.app_service_name
-  location            = azurerm_resource_group.trap_chat.location
-  resource_group_name = azurerm_resource_group.trap_chat.name
-  service_plan_id     = azurerm_service_plan.backend.id
-  https_only          = true
+resource "azurerm_container_app_environment_storage" "backend_data" {
+  name                         = "trapchat-data"
+  container_app_environment_id = azurerm_container_app_environment.backend.id
+  account_name                 = azurerm_storage_account.backend.name
+  share_name                   = azurerm_storage_share.backend_data.name
+  access_key                   = azurerm_storage_account.backend.primary_access_key
+  access_mode                  = "ReadWrite"
+}
 
-  site_config {
-    always_on          = false
-    http2_enabled      = true
-    websockets_enabled = true
-    app_command_line   = "gunicorn --worker-class gthread --threads 100 --timeout 120 --bind 0.0.0.0:\u0024PORT app:app"
+resource "azurerm_container_app" "backend" {
+  name                         = var.container_app_name
+  container_app_environment_id = azurerm_container_app_environment.backend.id
+  resource_group_name          = azurerm_resource_group.trap_chat.name
+  revision_mode                = "Single"
+  tags                         = local.tags
 
-    application_stack {
-      python_version = "3.11"
-    }
+  secret {
+    name  = "flask-secret-key"
+    value = random_password.backend_secret.result
+  }
 
-    cors {
-      allowed_origins     = [var.frontend_origin]
-      support_credentials = true
+  ingress {
+    external_enabled           = true
+    allow_insecure_connections = false
+    target_port                = 8080
+    transport                  = "auto"
+    traffic_weight {
+      latest_revision = true
+      percentage      = 100
     }
   }
 
-  app_settings = {
-    SCM_DO_BUILD_DURING_DEPLOYMENT = "true"
-    DATABASE_URL                   = "sqlite:////home/data/trapchat.db"
-    FRONTEND_ORIGIN                = var.frontend_origin
-  }
+  template {
+    min_replicas = 0
+    max_replicas = 1
 
-  tags = local.tags
+    container {
+      name   = "backend"
+      image  = var.backend_image
+      cpu    = 0.25
+      memory = "0.5Gi"
 
-  lifecycle {
-    # Deployment injects SECRET_KEY without placing it in Terraform state.
-    ignore_changes = [app_settings["SECRET_KEY"]]
+      env {
+        name  = "DATABASE_URL"
+        value = "sqlite:////data/trapchat.db"
+      }
+      env {
+        name  = "FRONTEND_ORIGIN"
+        value = var.frontend_origin
+      }
+      env {
+        name        = "SECRET_KEY"
+        secret_name = "flask-secret-key"
+      }
+      env {
+        name  = "PORT"
+        value = "8080"
+      }
+
+      volume_mounts {
+        name = "backend-data"
+        path = "/data"
+      }
+
+      liveness_probe {
+        transport = "HTTP"
+        port      = 8080
+        path      = "/api/health"
+      }
+      readiness_probe {
+        transport = "HTTP"
+        port      = 8080
+        path      = "/api/health"
+      }
+    }
+
+    volume {
+      name         = "backend-data"
+      storage_name = azurerm_container_app_environment_storage.backend_data.name
+      storage_type = "AzureFile"
+    }
   }
 }

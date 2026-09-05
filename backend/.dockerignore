@@ -1,0 +1,10 @@
+.venv
+__pycache__
+.pytest_cache
+*.pyc
+*.db
+.env
+tests
+legacy-app
+Deployment_Notes.txt
+render.yaml
