@@ -1,15 +1,21 @@
 name: backend CICD
 
-# Full build-and-deploy pipeline for the Flask backend. Builds are not
-# artifacted between pipelines: test, image build, and rollout all happen in
-# this one workflow.
+# Two stages, so the run shows two bubbles: Build, then Deploy behind a
+# manual approval gate.
+#
+#   Build  -> test, build the image, push it to GHCR
+#   Deploy -> roll the image out to Azure Container Apps and verify health
+#
+# The approval gate is enforced by the GitHub Environment `backend-prod`,
+# which must have at least one Required Reviewer configured under
+# Settings -> Environments. GitHub auto-creates an environment on first use
+# with NO protection rules, so without that one-time setup Deploy runs
+# unattended.
 #
 # Triggers:
-#   - push to main touching backend/  -> test, build, push image, deploy
-#   - pull request touching backend/  -> test only, never deploys
+#   - push to main touching backend/  -> build, then gated deploy
+#   - pull request touching backend/  -> build only, never deploys
 #   - after a successful "infra CICD" -> redeploy onto new/changed infra
-#
-# There are no manual deployment steps. Push a change to deploy it.
 
 on:
   push:
@@ -41,10 +47,10 @@ env:
   IMAGE: ghcr.io/itmeansbigmountain/trap-chat-backend
 
 jobs:
-  backend:
-    name: Test, build and deploy backend
+  build:
+    name: Build
     runs-on: ubuntu-latest
-    # Never deploy off the back of a failed infra run.
+    # Never build off the back of a failed infra run.
     if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     steps:
       - uses: actions/checkout@v4
@@ -60,10 +66,8 @@ jobs:
       - name: Test
         working-directory: backend
         run: |
-          python -m py_compile app.py api/index.py
+          python -m py_compile app.py
           python -m pytest tests/ -q
-
-      # --- Everything below deploys. Pull requests stop at the tests above. ---
 
       - uses: docker/login-action@v3
         if: github.event_name != 'pull_request'
@@ -72,6 +76,8 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Tagged with the commit SHA so the deploy stage rolls out an immutable,
+      # traceable image rather than a moving tag.
       - uses: docker/build-push-action@v6
         if: github.event_name != 'pull_request'
         with:
@@ -81,8 +87,15 @@ jobs:
             ${{ env.IMAGE }}:${{ github.sha }}
             ${{ env.IMAGE }}:latest
 
+  deploy:
+    name: Deploy
+    needs: build
+    # Pull requests build but never deploy.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    environment: backend-prod
+    steps:
       - name: Azure login
-        if: github.event_name != 'pull_request'
         uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
@@ -91,7 +104,6 @@ jobs:
       # Azure never re-pulls a mutable tag on its own. Roll out the immutable
       # per-commit tag so every deploy is a distinct, traceable revision.
       - name: Roll out image to Container App
-        if: github.event_name != 'pull_request'
         run: |
           az extension add --name containerapp --upgrade -y
           # infra CICD can be mid-apply on the same Container App. Azure
@@ -113,7 +125,6 @@ jobs:
             --image "${IMAGE}:${{ github.sha }}"
 
       - name: Verify backend health
-        if: github.event_name != 'pull_request'
         run: |
           fqdn=$(az containerapp show --name "$CONTAINER_APP_NAME" --resource-group "$RESOURCE_GROUP" --query properties.configuration.ingress.fqdn -o tsv)
           echo "Checking https://${fqdn}/api/health"

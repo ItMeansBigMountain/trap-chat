@@ -32,17 +32,19 @@ workflow" as part of normal operation. You ship a change by pushing it.
 The single exception is the infrastructure **approval gate** described
 below, which is a review step, not a manual deployment step.
 
-## Three pipelines, one per component
+## Three pipelines, one per component, two stages each
 
-Pipelines are organised by component, not by stage. Builds are not
-artifacted between pipelines, so each pipeline does the whole job for its
-component: test, build, and deploy in one workflow.
+Pipelines are organised by component, not by stage. Each has exactly two
+jobs so a run shows two bubbles, and the second waits on a manual approval.
 
-| Pipeline | File | Triggered by | Does |
+| Pipeline | File | Stage 1 | Stage 2 (gated) |
 |---|---|---|---|
-| `frontend CICD` | `.github/workflows/frontend-cicd.yml` | push/PR touching `frontend/expo/**`, or a successful `infra CICD` | typecheck, web export, deploy to Static Web Apps, verify |
-| `backend CICD` | `.github/workflows/backend-cicd.yml` | push/PR touching `backend/**`, or a successful `infra CICD` | pytest, build image, push to GHCR, roll out to Container Apps, verify health |
-| `infra CICD` | `.github/workflows/infra-cicd.yml` | push/PR touching `infra/terraform/**` | fmt, validate, plan, **approval gate**, apply |
+| `frontend CICD` | `.github/workflows/frontend-cicd.yml` | Build: typecheck, web export, upload bundle | Deploy: publish that bundle to Static Web Apps, verify |
+| `backend CICD` | `.github/workflows/backend-cicd.yml` | Build: pytest, build image, push to GHCR | Deploy: roll out to Container Apps, verify health |
+| `infra CICD` | `.github/workflows/infra-cicd.yml` | Plan: fmt, validate, plan into the run summary | Apply: apply the reviewed plan |
+
+The frontend deploy publishes the **artifact the build produced**, so
+approving ships exactly what was reviewed rather than rebuilding.
 
 Rules that follow from this shape:
 
@@ -62,21 +64,24 @@ Rules that follow from this shape:
   `provisioningState` and waits for the in-flight operation to drain before
   touching `trap-chat-api`. Keep those waits.
 
-## The infra approval gate
+## The approval gates
 
-`infra CICD` is split into two jobs: `plan` runs automatically on every
-infra change and renders the full plan into the run summary; `apply` then
-waits for a human to approve it, and applies the exact reviewed plan file
-rather than re-planning.
+Every pipeline's second stage waits on a GitHub Environment. Each of these
+must have at least one **Required Reviewer** under Settings → Environments:
 
-The gate is enforced by the GitHub Environment **`infra-prod-apply`**, which
-must have at least one Required Reviewer configured under
-Settings → Environments. GitHub auto-creates an environment on first use
-with **no** protection rules, so if that setup is missing the apply runs
-unattended. If you ever see apply run without a prompt, the environment
-protection is not configured.
+| Environment | Gates |
+|---|---|
+| `infra-prod-apply` | `infra CICD` → Apply |
+| `backend-prod` | `backend CICD` → Deploy |
+| `frontend-prod` | `frontend CICD` → Deploy |
 
-Always read the plan for destroys before approving.
+GitHub auto-creates an environment on first use with **no** protection
+rules, so if that one-time setup is missing the stage runs unattended. If a
+deploy ever runs without prompting you, the environment protection is not
+configured. Do not add reviewers to `infra-prod`: that is the plan stage,
+and gating it would mean approving a plan before you can read it.
+
+Always read the plan for destroys before approving an apply.
 
 ## Azure architecture and why
 
@@ -109,6 +114,27 @@ Always read the plan for destroys before approving.
   no registry credential is stored in Terraform state.
 - **Frontend stays on the existing Azure Static Web App.** Do not delete or
   replace it. Private DNS is out of scope.
+- **Vercel is not used for this project at all.** The Vercel configs and the
+  `backend/api/index.py` serverless entrypoint were removed. Do not
+  reintroduce them or add `VERCEL` environment branches to the backend.
+
+## Frontend and backend contracts
+
+These break silently: nothing fails to compile, the UI just renders
+undefined or a handler never fires. `backend/tests/test_api_contracts.py`
+guards them.
+
+- **CORS must always negotiate credentials.** The frontend sends every
+  request with `credentials: 'include'`, and a browser discards the response
+  unless `Access-Control-Allow-Credentials` is true. The backend enables
+  `supports_credentials` whether or not `FRONTEND_ORIGIN` is pinned;
+  without it the whole UI fails against a local backend.
+- **Socket event names must match exactly.** The backend relays game moves
+  back out on `game_action`, not `game_state`. A listener on the wrong name
+  is silent, not an error.
+- **Match players are objects, not strings.** `/api/matches/quick` returns
+  `players: [{display_name}]` to match the `MatchmakingResponse` interface
+  and the `player_joined` event.
 
 ## Deployment semantics you must not break
 
@@ -156,7 +182,7 @@ finished features.
 python -m venv .venv && source .venv/Scripts/activate   # or bin/activate
 pip install -r backend/requirements.txt pytest
 PYTHONPATH=backend python -m pytest backend/tests -q
-PYTHONPATH=backend python -m py_compile backend/app.py backend/api/index.py
+PYTHONPATH=backend python -m py_compile backend/app.py
 
 # frontend
 cd frontend/expo && npm ci && npx tsc --noEmit && npm run build:web

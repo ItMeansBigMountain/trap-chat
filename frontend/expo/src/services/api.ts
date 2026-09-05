@@ -138,7 +138,9 @@ class ApiService {
   onPlayerLeft(cb: (data: { match_id: number; player_id: number }) => void): () => void { this.socket?.on('player_left', cb); return () => this.socket?.off('player_left', cb); }
   onSignal(cb: (signal: WebRTCSignal) => void): () => void { this.socket?.on('signal', cb); return () => this.socket?.off('signal', cb); }
   onChatMessage(cb: (data: { match_id: number; from: string; text: string; timestamp: string }) => void): () => void { this.socket?.on('chat_message', cb); return () => this.socket?.off('chat_message', cb); }
-  onGameState(cb: (data: { match_id: number; state: Record<string, unknown> }) => void): () => void { this.socket?.on('game_state', cb); return () => this.socket?.off('game_state', cb); }
+  // The backend relays game actions back out on 'game_action', not 'game_state'.
+  // Listening on 'game_state' silently never fires.
+  onGameAction(cb: (data: { match_id: number; action: string; payload: Record<string, unknown>; from: string }) => void): () => void { this.socket?.on('game_action', cb); return () => this.socket?.off('game_action', cb); }
   onError(cb: (data: { message: string; code?: string }) => void): () => void { this.socket?.on('error', cb); return () => this.socket?.off('error', cb); }
 }
 

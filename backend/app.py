@@ -17,7 +17,7 @@ import jwt
 
 # Config
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-DEFAULT_DB_PATH = '/tmp/trapchat.db' if os.environ.get('VERCEL') else os.path.join(BASE_DIR, 'trapchat.db')
+DEFAULT_DB_PATH = os.path.join(BASE_DIR, 'trapchat.db')
 DB_PATH = os.environ.get('DATABASE_URL', f'sqlite:///{DEFAULT_DB_PATH}')
 SECRET_KEY = os.environ.get('SECRET_KEY', 'dev-secret-change-in-production')
 JWT_EXP_HOURS = 24 * 30  # 30 days
@@ -41,7 +41,13 @@ FRONTEND_ORIGIN = os.environ.get('FRONTEND_ORIGIN')
 if FRONTEND_ORIGIN:
     CORS(app, supports_credentials=True, origins=FRONTEND_ORIGIN)
 else:
-    CORS(app)
+    # No origin pinned, which is the local development case. This still has to
+    # negotiate credentialed CORS: the frontend sends every request with
+    # credentials: 'include', and a browser discards the response unless
+    # Access-Control-Allow-Credentials is true. Flask-CORS echoes the caller's
+    # origin rather than '*' once supports_credentials is set, which is what
+    # browsers require for credentialed requests.
+    CORS(app, supports_credentials=True)
 
 
 def cookie_options():
@@ -467,7 +473,7 @@ def api_quick_match():
             'room_code': existing.room_code,
             'game': game.slug,
             'status': existing.status,
-            'players': [p.display_name for p in existing.players],
+            'players': [{'display_name': p.display_name} for p in existing.players],
         })
 
     # Find a waiting match the caller has not already joined, or create one.
@@ -500,7 +506,7 @@ def api_quick_match():
         db.session.commit()
 
     players = MatchPlayer.query.filter_by(match_id=match.id).all()
-    return jsonify({'match_id': match.id, 'room_code': match.room_code, 'game': game.slug, 'status': match.status, 'players': [p.display_name for p in players]})
+    return jsonify({'match_id': match.id, 'room_code': match.room_code, 'game': game.slug, 'status': match.status, 'players': [{'display_name': p.display_name} for p in players]})
 
 
 @app.route('/api/rooms', methods=['GET'])

@@ -1,15 +1,21 @@
 name: frontend CICD
 
-# Full build-and-deploy pipeline for the Expo web frontend. Builds are not
-# artifacted between pipelines: typecheck, web export, and deploy all happen
-# in this one workflow.
+# Two stages, so the run shows two bubbles: Build, then Deploy behind a
+# manual approval gate.
+#
+#   Build  -> typecheck, export the web bundle, upload it as an artifact
+#   Deploy -> publish that exact bundle to Azure Static Web Apps and verify
+#
+# The approval gate is enforced by the GitHub Environment `frontend-prod`,
+# which must have at least one Required Reviewer configured under
+# Settings -> Environments. GitHub auto-creates an environment on first use
+# with NO protection rules, so without that one-time setup Deploy runs
+# unattended.
 #
 # Triggers:
-#   - push to main touching frontend/expo/  -> typecheck, build, deploy
-#   - pull request touching frontend/expo/  -> typecheck and build only
+#   - push to main touching frontend/expo/  -> build, then gated deploy
+#   - pull request touching frontend/expo/  -> build only, never deploys
 #   - after a successful "infra CICD"       -> rebuild against the new backend
-#
-# There are no manual deployment steps. Push a change to deploy it.
 
 on:
   push:
@@ -40,10 +46,10 @@ env:
   STATIC_WEB_APP_NAME: stapp-trap-chat-prod
 
 jobs:
-  frontend:
-    name: Build and deploy frontend
+  build:
+    name: Build
     runs-on: ubuntu-latest
-    # Never deploy off the back of a failed infra run.
+    # Never build off the back of a failed infra run.
     if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     steps:
       - uses: actions/checkout@v4
@@ -62,8 +68,8 @@ jobs:
         working-directory: frontend/expo
         run: npx tsc --noEmit
 
-      # On a pull request there is no deploy, so the bundle only needs to
-      # compile. Use a placeholder that is obviously not a real backend.
+      # A pull request never deploys, so the bundle only has to compile. Use a
+      # placeholder host that is obviously not a real backend.
       - name: Build (pull request check only)
         if: github.event_name == 'pull_request'
         working-directory: frontend/expo
@@ -71,8 +77,6 @@ jobs:
         env:
           EXPO_PUBLIC_API_URL: https://backend.invalid
           EXPO_PUBLIC_SOCKET_URL: https://backend.invalid
-
-      # --- Everything below deploys. Pull requests stop at the build above. ---
 
       - name: Azure login
         if: github.event_name != 'pull_request'
@@ -102,19 +106,45 @@ jobs:
           EXPO_PUBLIC_API_URL: ${{ steps.backend_url.outputs.url }}
           EXPO_PUBLIC_SOCKET_URL: ${{ steps.backend_url.outputs.url }}
 
-      - name: Deploy to Azure Static Web Apps
+      # Hand the exact built bundle to the deploy stage, so approving publishes
+      # what was built rather than rebuilding something new.
+      - name: Upload web bundle
         if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: trap-chat-web-bundle
+          path: frontend/expo/dist
+          retention-days: 5
+
+  deploy:
+    name: Deploy
+    needs: build
+    # Pull requests build but never deploy.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    environment: frontend-prod
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: trap-chat-web-bundle
+          path: dist
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Deploy to Azure Static Web Apps
         uses: Azure/static-web-apps-deploy@v1
         with:
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           action: upload
-          app_location: frontend/expo/dist
+          app_location: dist
           skip_app_build: true
           output_location: ''
 
       - name: Verify frontend
-        if: github.event_name != 'pull_request'
         run: |
           hostname=$(az staticwebapp show --name "$STATIC_WEB_APP_NAME" --resource-group "$RESOURCE_GROUP" --query defaultHostname -o tsv)
           echo "Checking https://${hostname}/"
