@@ -23,6 +23,26 @@ variable "static_web_app_name" {
   default = "stapp-trap-chat-prod"
 }
 
+variable "app_service_plan_name" {
+  type    = string
+  default = "asp-trap-chat-prod"
+}
+
+variable "app_service_name" {
+  type    = string
+  default = "trap-chat-api"
+}
+
+variable "app_service_sku" {
+  type    = string
+  default = "F1"
+}
+
+variable "frontend_origin" {
+  type    = string
+  default = "https://yellow-ground-05896030f.6.azurestaticapps.net"
+}
+
 variable "monthly_budget_amount" {
   type    = number
   default = 10

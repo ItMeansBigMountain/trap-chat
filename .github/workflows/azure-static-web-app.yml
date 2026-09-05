@@ -48,3 +48,19 @@ jobs:
           app_location: frontend/expo/dist
           skip_app_build: true
           output_location: ''
+
+      - name: Verify deployment
+        if: always()
+        shell: bash
+        run: |
+          hostname=$(az staticwebapp show \
+            --name "stapp-trap-chat-prod" \
+            --resource-group "rg-trap-chat-prod" \
+            --query "defaultHostname" -o tsv)
+          echo "Checking https://${hostname}/"
+          curl --fail "https://${hostname}/" | head -c 100
+        env:
+          AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}

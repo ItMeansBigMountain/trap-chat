@@ -28,9 +28,24 @@ db = SQLAlchemy(app)
 bcrypt = Bcrypt(app)
 socketio = SocketIO(app, cors_allowed_origins='*', async_mode='threading')
 
+def _storage_metadata():
+    engine = db.engine
+    try:
+        with engine.connect() as connection:
+            connection.exec_driver_sql("SELECT 1")
+    except Exception:
+        return {"storage": engine.url.get_backend_name(), "productionReadyStorage": False}
+    return {"storage": engine.url.get_backend_name(), "productionReadyStorage": True}
+
+
 @app.get('/health')
+@app.get('/api/health')
 def health():
-    return jsonify({'ok': True, 'service': 'trap-chat-backend'})
+    return jsonify({
+        'ok': True,
+        'service': 'trap-chat-backend',
+        **_storage_metadata(),
+    })
 
 # -------------------------
 # Models
