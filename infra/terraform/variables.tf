@@ -34,10 +34,6 @@ variable "backend_image" {
   type    = string
   default = "ghcr.io/itmeansbigmountain/trap-chat-backend:latest"
 }
-variable "frontend_origin" {
-  type    = string
-  default = "https://yellow-ground-05896030f.6.azurestaticapps.net"
-}
 variable "monthly_budget_amount" {
   type    = number
   default = 10

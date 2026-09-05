@@ -125,8 +125,11 @@ resource "azurerm_container_app" "backend" {
         value = "sqlite:////data/trapchat.db"
       }
       env {
+        # Read the real hostname off the Static Web App rather than a pinned
+        # variable. Recreating that app issues a new hostname, and a stale
+        # value here means the backend rejects the live frontend on CORS.
         name  = "FRONTEND_ORIGIN"
-        value = var.frontend_origin
+        value = "https://${azurerm_static_web_app.frontend.default_host_name}"
       }
       env {
         name        = "SECRET_KEY"
