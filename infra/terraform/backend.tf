@@ -4,6 +4,6 @@ terraform {
     storage_account_name = "cwbtfstate4f070006f5"
     container_name       = "tfstate"
     key                  = "trap-chat/prod.tfstate"
-    use_oidc              = true
+    use_azuread_auth     = true
   }
 }

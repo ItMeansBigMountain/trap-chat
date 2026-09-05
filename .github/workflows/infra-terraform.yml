@@ -21,6 +21,10 @@ permissions:
   contents: read
   pull-requests: write
 
+concurrency:
+  group: trap-chat-terraform-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
   ARM_USE_OIDC: false
   ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
@@ -28,24 +32,28 @@ env:
   ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
   ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
   TF_IN_AUTOMATION: true
+  TF_INPUT: false
 
 jobs:
   terraform:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment: infra-prod
     defaults:
       run:
         working-directory: infra/terraform
     steps:
       - uses: actions/checkout@v4
-      - name: Preflight OIDC variables
+      - name: Preflight Azure service-account configuration
         shell: bash
         env:
           CLIENT: ${{ vars.AZURE_CLIENT_ID }}
           TENANT: ${{ vars.AZURE_TENANT_ID }}
           SUBSCRIPTION: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
         run: |
-          for value in CLIENT TENANT SUBSCRIPTION; do
+          for value in CLIENT TENANT SUBSCRIPTION CLIENT_SECRET AZURE_CREDENTIALS; do
             test -n "${!value}" || { echo "::error::$value is missing"; exit 1; }
           done
       - uses: azure/login@v2
@@ -55,17 +63,21 @@ jobs:
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.9.8
-      - name: Terraform fmt
-        run: terraform fmt -recursive
       - name: Terraform fmt check
-        run: git diff --exit-code -- infra/terraform
+        run: terraform fmt -check -recursive
       - name: Terraform init
         run: terraform init -backend-config=use_azuread_auth=true
       - name: Import pre-existing Azure resources into Terraform state
         shell: bash
         run: |
-          terraform state list | grep -q 'azurerm_resource_group.trap_chat' || terraform import azurerm_resource_group.trap_chat "/subscriptions/${{ vars.AZURE_SUBSCRIPTION_ID }}/resourceGroups/rg-trap-chat-prod"
-          terraform state list | grep -q 'azurerm_static_web_app.frontend' || terraform import azurerm_static_web_app.frontend "/subscriptions/${{ vars.AZURE_SUBSCRIPTION_ID }}/resourceGroups/rg-trap-chat-prod/providers/Microsoft.Web/staticSites/stapp-trap-chat-prod"
+          terraform state list | grep -q '^azurerm_resource_group.trap_chat$' || \
+            timeout 5m terraform import -input=false -var-file=env/prod.tfvars \
+              azurerm_resource_group.trap_chat \
+              "/subscriptions/${{ vars.AZURE_SUBSCRIPTION_ID }}/resourceGroups/rg-trap-chat-prod"
+          terraform state list | grep -q '^azurerm_static_web_app.frontend$' || \
+            timeout 5m terraform import -input=false -var-file=env/prod.tfvars \
+              azurerm_static_web_app.frontend \
+              "/subscriptions/${{ vars.AZURE_SUBSCRIPTION_ID }}/resourceGroups/rg-trap-chat-prod/providers/Microsoft.Web/staticSites/stapp-trap-chat-prod"
       - name: Terraform validate
         run: terraform validate
       - name: Terraform plan

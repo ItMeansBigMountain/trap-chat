@@ -31,13 +31,13 @@ variable "budget_contact_emails" {
 variable "tags" {
   type = map(string)
   default = {
-    AppName       = "TrapChat"
-    AppSlug       = "trap-chat"
-    Project       = "TrapChat"
-    ManagedBy     = "Terraform"
-    IaC           = "Terraform"
+    AppName        = "TrapChat"
+    AppSlug        = "trap-chat"
+    Project        = "TrapChat"
+    ManagedBy      = "Terraform"
+    IaC            = "Terraform"
     DeploymentTool = "GitHubActions"
-    Repository    = "ItMeansBigMountain/trap-chat"
-    CostGuard     = "free-tier"
+    Repository     = "ItMeansBigMountain/trap-chat"
+    CostGuard      = "free-tier"
   }
 }
