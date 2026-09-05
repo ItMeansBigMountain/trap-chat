@@ -195,13 +195,34 @@ class Room(db.Model):
 # -------------------------
 # Helpers
 # -------------------------
+# The frontend and backend are on different sites, so every cookie set here is
+# a third-party cookie: Chrome incognito drops them, and Safari and Firefox
+# restrict them. Read credentials from headers first and treat cookies as a
+# same-site convenience, otherwise a privacy-respecting browser cannot sign in.
+def bearer_token():
+    header = request.headers.get('Authorization', '')
+    if header.startswith('Bearer '):
+        candidate = header[7:].strip()
+        if candidate:
+            return candidate
+    return request.cookies.get('auth_token')
+
+
+def guest_session_id():
+    return request.headers.get('X-Guest-Session') or request.cookies.get('guest_session')
+
+
+def current_user():
+    token = bearer_token()
+    return User.from_token(token) if token else None
+
+
 def auth_required(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
-        token = request.cookies.get('auth_token')
-        if not token:
+        if not bearer_token():
             return jsonify({'error': 'Unauthorized'}), 401
-        user = User.from_token(token)
+        user = current_user()
         if not user:
             return jsonify({'error': 'Invalid token'}), 401
         request.user = user
@@ -212,11 +233,7 @@ def auth_required(f):
 def optional_auth(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
-        token = request.cookies.get('auth_token')
-        if token:
-            user = User.from_token(token)
-            if user:
-                request.user = user
+        request.user = current_user()
         return f(*args, **kwargs)
     return wrapper
 
@@ -224,16 +241,13 @@ def optional_auth(f):
 def guest_or_auth(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
-        token = request.cookies.get('auth_token')
-        if token:
-            user = User.from_token(token)
-            if user:
-                request.user = user
-                request.guest = False
-                return f(*args, **kwargs)
+        user = current_user()
+        if user:
+            request.user = user
+            request.guest = False
+            return f(*args, **kwargs)
 
-        guest_session = request.cookies.get('guest_session')
-        if not guest_session:
+        if not guest_session_id():
             return jsonify({'error': 'guest session required'}), 401
 
         request.user = None
@@ -361,7 +375,10 @@ def api_register():
     db.session.add(u)
     db.session.commit()
     token = u.to_token()
-    resp = jsonify({'user': {'id': u.id, 'username': u.username}})
+    # Returned in the body as well as the cookie: this frontend is on a
+    # different site, so the cookie is third-party and privacy-respecting
+    # browsers drop it. The client stores this and sends it as a bearer token.
+    resp = jsonify({'user': {'id': u.id, 'username': u.username}, 'token': token})
     resp.set_cookie('auth_token', token, **cookie_options())
     return resp
 
@@ -375,7 +392,10 @@ def api_login():
     if not u or not u.check_password(password):
         return jsonify({'error': 'invalid credentials'}), 401
     token = u.to_token()
-    resp = jsonify({'user': {'id': u.id, 'username': u.username}})
+    # Returned in the body as well as the cookie: this frontend is on a
+    # different site, so the cookie is third-party and privacy-respecting
+    # browsers drop it. The client stores this and sends it as a bearer token.
+    resp = jsonify({'user': {'id': u.id, 'username': u.username}, 'token': token})
     resp.set_cookie('auth_token', token, **cookie_options())
     return resp
 
@@ -396,7 +416,7 @@ def api_me():
     user = getattr(request, 'user', None)
     if user:
         return jsonify({'user': {'id': user.id, 'username': user.username, 'email': user.email, 'preferences': user.prefs(), 'rating': user.rating, 'lat': user.lat, 'lng': user.lng}})
-    guest_sess = request.cookies.get('guest_session')
+    guest_sess = guest_session_id()
     if guest_sess:
         return jsonify({'guest': True, 'guest_session_id': guest_sess})
     return jsonify({'user': None})
@@ -457,7 +477,7 @@ def api_quick_match():
     if not game.is_1v1:
         return jsonify({'error': 'quick match only for 1v1 games'}), 400
 
-    guest_session = request.cookies.get('guest_session')
+    guest_session = guest_session_id()
     identity_filter = (
         MatchPlayer.user_id == request.user.id
         if request.user else MatchPlayer.guest_session_id == guest_session
@@ -534,7 +554,7 @@ def api_join_room(code):
     room = Room.query.filter_by(code=code).first_or_404()
     if room.status != 'open':
         return jsonify({'error': 'room not open'}), 400
-    display = request.user.username if request.user else f'Guest_{request.cookies.get("guest_session", "anon")[-4:]}'
+    display = request.user.username if request.user else f'Guest_{(guest_session_id() or "anon")[-4:]}'
 
     # A room has exactly one match, reused by everyone who joins. Match.room_code
     # is unique, so minting a fresh Match per join made the second player fail
@@ -552,7 +572,7 @@ def api_join_room(code):
         db.session.add(match)
         db.session.commit()
 
-    guest_session = request.cookies.get('guest_session') if not request.user else None
+    guest_session = guest_session_id() if not request.user else None
     identity_filter = (
         MatchPlayer.user_id == request.user.id
         if request.user else MatchPlayer.guest_session_id == guest_session
@@ -585,7 +605,7 @@ def api_submit_result(match_id):
     if request.user:
         mp = MatchPlayer.query.filter_by(match_id=match_id, user_id=request.user.id).first()
     else:
-        gs = request.cookies.get('guest_session')
+        gs = guest_session_id()
         mp = MatchPlayer.query.filter_by(match_id=match_id, guest_session_id=gs).first()
     if not mp:
         return jsonify({'error': 'not a player in this match'}), 403
@@ -628,12 +648,36 @@ def api_leaderboard(slug):
 # -------------------------
 # SocketIO Events
 # -------------------------
-def socket_player(match_id):
-    token = request.cookies.get('auth_token')
+# Identity of each connected socket, captured from the handshake. Cookies are
+# third-party on this deployment and are dropped by privacy-respecting
+# browsers, so the client also passes credentials in the Socket.IO auth
+# payload. Keyed by session id and cleared on disconnect.
+SOCKET_IDENTITIES = {}
+
+
+@socketio.on('connect')
+def on_socket_connect(auth=None):
+    creds = auth if isinstance(auth, dict) else {}
+    token = creds.get('token') or request.cookies.get('auth_token')
+    guest = creds.get('guest_session') or request.cookies.get('guest_session')
     user = User.from_token(token) if token else None
-    if user:
-        return MatchPlayer.query.filter_by(match_id=match_id, user_id=user.id).first()
-    guest_session = request.cookies.get('guest_session')
+    SOCKET_IDENTITIES[request.sid] = {
+        'user_id': user.id if user else None,
+        'guest_session': None if user else guest,
+    }
+
+
+@socketio.on('disconnect')
+def on_socket_disconnect(*args):
+    SOCKET_IDENTITIES.pop(request.sid, None)
+
+
+def socket_player(match_id):
+    identity = SOCKET_IDENTITIES.get(request.sid) or {}
+    user_id = identity.get('user_id')
+    if user_id:
+        return MatchPlayer.query.filter_by(match_id=match_id, user_id=user_id).first()
+    guest_session = identity.get('guest_session')
     if guest_session:
         return MatchPlayer.query.filter_by(
             match_id=match_id, guest_session_id=guest_session

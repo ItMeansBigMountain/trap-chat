@@ -27,13 +27,51 @@ function backendUrl(value: string | undefined, variableName: string): string {
   return value.replace(/\/$/, '');
 }
 
+// Credentials are kept client-side, not only in cookies. The frontend and
+// backend are on different sites, so every cookie the backend sets is a
+// third-party cookie: Chrome incognito drops it outright and Safari and
+// Firefox restrict it, which made guests fail with "guest session required".
+const TOKEN_KEY = 'trapchat.token';
+const GUEST_KEY = 'trapchat.guest';
+
+function loadStored(key: string): string | null {
+  try {
+    return globalThis.localStorage?.getItem(key) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function saveStored(key: string, value: string | null): void {
+  try {
+    if (value === null) globalThis.localStorage?.removeItem(key);
+    else globalThis.localStorage?.setItem(key, value);
+  } catch {
+    // Storage unavailable (private mode, native). Fall back to memory only.
+  }
+}
+
 class ApiService {
   private socket: Socket | null = null;
-  private guestSessionId: string | null = null;
+  private authToken: string | null = loadStored(TOKEN_KEY);
+  private guestSessionId: string | null = loadStored(GUEST_KEY);
+
+  private setToken(token: string | null): void {
+    this.authToken = token;
+    saveStored(TOKEN_KEY, token);
+  }
+
+  private setGuestSession(id: string | null): void {
+    this.guestSessionId = id;
+    saveStored(GUEST_KEY, id);
+  }
 
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const headers: HeadersInit = {
       'Content-Type': 'application/json',
+      // A signed-in user wins; otherwise fall back to the guest session.
+      ...(this.authToken ? { Authorization: `Bearer ${this.authToken}` } : {}),
+      ...(!this.authToken && this.guestSessionId ? { 'X-Guest-Session': this.guestSessionId } : {}),
       ...options.headers,
     };
     const response = await fetch(`${backendUrl(API_BASE, 'EXPO_PUBLIC_API_URL')}${endpoint}`, {
@@ -50,16 +88,22 @@ class ApiService {
   }
 
   async register(username: string, email: string | undefined, password: string): Promise<{ user: User }> {
-    return this.request('/api/auth/register', { method: 'POST', body: JSON.stringify({ username, email, password }) });
+    const result = await this.request<{ user: User; token?: string }>('/api/auth/register', { method: 'POST', body: JSON.stringify({ username, email, password }) });
+    if (result.token) this.setToken(result.token);
+    this.setGuestSession(null);
+    return result;
   }
 
   async login(username: string, password: string): Promise<{ user: User }> {
-    return this.request('/api/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) });
+    const result = await this.request<{ user: User; token?: string }>('/api/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) });
+    if (result.token) this.setToken(result.token);
+    this.setGuestSession(null);
+    return result;
   }
 
   async guest(): Promise<GuestSession> {
     const result = await this.request<GuestSession>('/api/auth/guest', { method: 'POST' });
-    this.guestSessionId = result.guest_session_id;
+    this.setGuestSession(result.guest_session_id);
     return result;
   }
 
@@ -69,7 +113,8 @@ class ApiService {
 
   async logout(): Promise<void> {
     await this.request('/api/auth/logout', { method: 'POST' });
-    this.guestSessionId = null;
+    this.setToken(null);
+    this.setGuestSession(null);
   }
 
   async updatePreferences(prefs: Partial<User['preferences']>): Promise<{ preferences: User['preferences'] }> {
@@ -114,6 +159,12 @@ class ApiService {
       transports: ['websocket', 'polling'],
       autoConnect: true,
       withCredentials: true,
+      // The handshake cookie is third-party and often dropped, so send the
+      // credentials explicitly. The server reads these on connect.
+      auth: {
+        token: this.authToken ?? undefined,
+        guest_session: this.guestSessionId ?? undefined,
+      },
     });
     this.socket.on('connect', () => console.log('[Socket] Connected:', this.socket?.id));
     this.socket.on('disconnect', (reason) => console.log('[Socket] Disconnected:', reason));
@@ -126,11 +177,11 @@ class ApiService {
     this.socket = null;
   }
 
-  // The server identifies a socket from the cookies sent on its handshake, and
-  // those are fixed when the connection opens. A socket opened before sign-in
-  // therefore stays anonymous for its whole life, and every join_match on it is
+  // The server identifies a socket from the credentials sent on its handshake,
+  // and those are fixed when the connection opens. A socket opened before
+  // sign-in stays anonymous for its whole life, and every join_match on it is
   // rejected with "not a player in this match". Reconnect after the session
-  // changes so the new handshake carries the auth cookie.
+  // changes so the new handshake carries the current credentials.
   reconnect(): Socket {
     this.disconnect();
     return this.connect();
