@@ -1,0 +1,190 @@
+name: CD
+
+# Deploys application code. Fully automatic: any push to main that touches
+# backend/ or frontend/expo/ rebuilds and redeploys just that component. Also
+# runs after a successful Infra apply, so a newly created Container App gets
+# the current image and the frontend is rebuilt against the real backend URL.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - 'frontend/expo/**'
+      - '.github/workflows/cd.yml'
+  workflow_run:
+    workflows: ["Infra"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: trap-chat-cd
+  cancel-in-progress: false
+
+env:
+  RESOURCE_GROUP: rg-trap-chat-prod
+  CONTAINER_APP_NAME: trap-chat-api
+  STATIC_WEB_APP_NAME: stapp-trap-chat-prod
+  IMAGE: ghcr.io/itmeansbigmountain/trap-chat-backend
+
+jobs:
+  changes:
+    name: Detect changed components
+    runs-on: ubuntu-latest
+    # Do not deploy off the back of a failed Infra run.
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: filter
+        shell: bash
+        run: |
+          set -euo pipefail
+          deploy_all() {
+            echo "backend=true" >> "$GITHUB_OUTPUT"
+            echo "frontend=true" >> "$GITHUB_OUTPUT"
+          }
+          if [ "${{ github.event_name }}" != "push" ]; then
+            echo "Trigger is ${{ github.event_name }}: deploying both components."
+            deploy_all; exit 0
+          fi
+          before="${{ github.event.before }}"
+          if [ -z "$before" ] || [ "$before" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "${before}^{commit}" 2>/dev/null; then
+            echo "No usable diff base: deploying both components."
+            deploy_all; exit 0
+          fi
+          changed="$(git diff --name-only "$before" "${{ github.sha }}")"
+          echo "Changed files:"
+          echo "$changed"
+          if echo "$changed" | grep -q '^backend/'; then b=true; else b=false; fi
+          if echo "$changed" | grep -q '^frontend/expo/'; then f=true; else f=false; fi
+          echo "backend=$b" >> "$GITHUB_OUTPUT"
+          echo "frontend=$f" >> "$GITHUB_OUTPUT"
+
+  backend:
+    name: Build and deploy backend
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        working-directory: backend
+        run: pip install --no-cache-dir -r requirements.txt pytest==8.3.5
+      - name: Verify backend
+        working-directory: backend
+        run: |
+          python -m py_compile app.py api/index.py
+          python -m pytest tests/ -q
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: backend
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ github.sha }}
+            ${{ env.IMAGE }}:latest
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      # Pushing an image does not change what a running Container App serves:
+      # Azure never re-pulls a mutable tag on its own. Roll out the immutable
+      # per-commit tag so each deploy is a distinct, traceable revision.
+      - name: Roll out image to Container App
+        run: |
+          az extension add --name containerapp --upgrade -y
+          az containerapp update \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --image "${IMAGE}:${{ github.sha }}"
+      - name: Verify backend health
+        run: |
+          fqdn=$(az containerapp show --name "$CONTAINER_APP_NAME" --resource-group "$RESOURCE_GROUP" --query properties.configuration.ingress.fqdn -o tsv)
+          echo "Checking https://${fqdn}/api/health"
+          for i in $(seq 1 10); do
+            if curl --fail --max-time 20 "https://${fqdn}/api/health"; then
+              echo
+              echo "- Backend: https://${fqdn}/api/health" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            echo "attempt $i failed, retrying in 15s"
+            sleep 15
+          done
+          echo "::error::backend health check never returned success"
+          exit 1
+
+  frontend:
+    name: Build and deploy frontend
+    needs: [changes, backend]
+    if: >-
+      always()
+      && needs.changes.result == 'success'
+      && needs.changes.outputs.frontend == 'true'
+      && (needs.backend.result == 'success' || needs.backend.result == 'skipped')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      # Read the backend hostname from Azure itself so the published bundle can
+      # never contain a guessed, stale, or hand-typed URL.
+      - name: Resolve verified backend URL
+        id: backend_url
+        run: |
+          fqdn=$(az containerapp show --name "$CONTAINER_APP_NAME" --resource-group "$RESOURCE_GROUP" --query properties.configuration.ingress.fqdn -o tsv 2>/dev/null || true)
+          if [ -z "$fqdn" ]; then
+            echo "::error::Could not resolve the Container App ingress FQDN. Run the Infra pipeline first."
+            exit 1
+          fi
+          echo "url=https://${fqdn}" >> "$GITHUB_OUTPUT"
+          echo "Backend URL: https://${fqdn}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/expo/package-lock.json
+      - name: Install dependencies
+        working-directory: frontend/expo
+        run: npm ci
+      - name: Typecheck
+        working-directory: frontend/expo
+        run: npx tsc --noEmit
+      - name: Export web build
+        working-directory: frontend/expo
+        run: npm run build:web
+        env:
+          EXPO_PUBLIC_API_URL: ${{ steps.backend_url.outputs.url }}
+          EXPO_PUBLIC_SOCKET_URL: ${{ steps.backend_url.outputs.url }}
+      - name: Deploy to Azure Static Web Apps
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          action: upload
+          app_location: frontend/expo/dist
+          skip_app_build: true
+          output_location: ''
+      - name: Verify frontend
+        run: |
+          hostname=$(az staticwebapp show --name "$STATIC_WEB_APP_NAME" --resource-group "$RESOURCE_GROUP" --query defaultHostname -o tsv)
+          echo "Checking https://${hostname}/"
+          curl --fail --max-time 30 -o /dev/null -w "HTTP %{http_code}\n" "https://${hostname}/"
+          echo "- Frontend: https://${hostname}" >> "$GITHUB_STEP_SUMMARY"

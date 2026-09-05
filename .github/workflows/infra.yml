@@ -1,21 +1,27 @@
-name: Terraform Azure Infrastructure
+name: Infra
+
+# Pipeline shape: plan runs automatically on every infra change, then apply
+# waits behind a manual approval gate.
+#
+# IMPORTANT: the approval gate is enforced by the GitHub Environment named
+# `infra-prod-apply`. It must be configured with at least one Required
+# Reviewer (Settings -> Environments -> infra-prod-apply -> Required
+# reviewers). GitHub auto-creates an environment on first use with NO
+# protection rules, so without that one-time setup the apply job will run
+# unattended.
 
 on:
   pull_request:
     paths:
       - 'infra/terraform/**'
-      - '.github/workflows/infra-terraform.yml'
+      - '.github/workflows/infra.yml'
   push:
     branches: [main]
     paths:
       - 'infra/terraform/**'
-      - '.github/workflows/infra-terraform.yml'
+      - '.github/workflows/infra.yml'
   workflow_dispatch:
     inputs:
-      apply:
-        description: Apply the reviewed Terraform plan
-        type: boolean
-        default: false
       force_unlock_id:
         description: Stale Terraform lock ID to recover after confirming no run is active
         type: string
@@ -41,7 +47,8 @@ env:
   TF_INPUT: false
 
 jobs:
-  terraform:
+  plan:
+    name: Plan
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: infra-prod
@@ -91,10 +98,59 @@ jobs:
         run: terraform validate
       - name: Terraform plan
         run: terraform plan -var-file=env/prod.tfvars -out=tfplan
+      # Render the plan into the run summary so the approving reviewer can see
+      # exactly what apply would do (especially any destroys) before approving.
+      - name: Publish plan to run summary
+        run: |
+          {
+            echo '## Terraform plan'
+            echo
+            echo '```terraform'
+            terraform show -no-color tfplan
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         with:
           name: trap-chat-terraform-plan
           path: infra/terraform/tfplan
+          retention-days: 5
+
+  apply:
+    name: Apply (requires approval)
+    needs: plan
+    # Never apply from a pull request; PRs get plan-only feedback.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: infra-prod-apply
+    defaults:
+      run:
+        working-directory: infra/terraform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          enable-AzPSSession: false
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+      - name: Terraform init
+        run: terraform init
+      - uses: actions/download-artifact@v4
+        with:
+          name: trap-chat-terraform-plan
+          path: infra/terraform
+      # Applies the exact plan file that was reviewed and approved. If state
+      # moved since the plan was taken, Terraform refuses the stale plan
+      # rather than applying something unreviewed.
       - name: Terraform apply
-        if: github.event_name == 'workflow_dispatch' && inputs.apply == true
         run: terraform apply -auto-approve tfplan
+      - name: Publish endpoints to run summary
+        run: |
+          {
+            echo '## Deployed endpoints'
+            echo
+            echo "- Backend: $(terraform output -raw backend_url)"
+            echo "- Frontend: https://$(terraform output -raw static_web_app_hostname)"
+          } >> "$GITHUB_STEP_SUMMARY"
