@@ -1,5 +1,9 @@
 locals {
-  tags = merge(var.tags, { Environment = "production" })
+  # Azure tag keys are compared case-insensitively and must be unique, so this
+  # must not add an "Environment" key on top of the "environment" key that
+  # var.tags already defines. Container Apps rejects the duplicate outright:
+  # "Duplicate tag key 'environment' found (case-insensitive)".
+  tags = merge({ environment = "production" }, var.tags)
 }
 
 resource "azurerm_resource_group" "trap_chat" {
