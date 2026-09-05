@@ -119,10 +119,23 @@ jobs:
               *) break ;;
             esac
           done
-          az containerapp update \
-            --name "$CONTAINER_APP_NAME" \
-            --resource-group "$RESOURCE_GROUP" \
-            --image "${IMAGE}:${{ github.sha }}"
+          # Right after an infra change the control plane can briefly answer
+          # "does not exist" for an app that demonstrably does, and it returns
+          # 409 while another operation drains. Both clear on their own, so
+          # retry rather than failing the deploy.
+          for attempt in 1 2 3 4 5; do
+            if az containerapp update \
+              --name "$CONTAINER_APP_NAME" \
+              --resource-group "$RESOURCE_GROUP" \
+              --image "${IMAGE}:${{ github.sha }}"; then
+              echo "rollout succeeded on attempt $attempt"
+              exit 0
+            fi
+            echo "rollout attempt $attempt failed, retrying in 20s"
+            sleep 20
+          done
+          echo "::error::could not roll out the image after 5 attempts"
+          exit 1
 
       - name: Verify backend health
         run: |
