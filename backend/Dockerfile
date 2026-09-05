@@ -11,4 +11,7 @@ COPY . .
 RUN rm -f trapchat.db
 
 EXPOSE 8080
-CMD ["sh", "-c", "exec gunicorn --worker-class gthread --workers 1 --threads 100 --timeout 120 --bind 0.0.0.0:${PORT} app:app"]
+# --access-logfile - sends request logs to stdout. Without it Gunicorn logs
+# nothing but startup and crashes, so the Container Apps log stream shows no
+# trace of what a client actually did, which makes live debugging impossible.
+CMD ["sh", "-c", "exec gunicorn --worker-class gthread --workers 1 --threads 100 --timeout 120 --access-logfile - --bind 0.0.0.0:${PORT} app:app"]
