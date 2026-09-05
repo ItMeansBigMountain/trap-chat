@@ -14,5 +14,8 @@ Key points, in short:
   subscription has zero App Service Plan quota on both B1 and F1.
 - **Never publish a guessed backend hostname** into the frontend; it is
   resolved from Azure at build time.
+- **Everything is in Central US** and inherits the resource group's region.
+- **Auth cannot rely on cookies**; they are third-party on this deployment.
+  Bearer token for users, `X-Guest-Session` for guests.
 - Multiple agents work here concurrently. Never force-push or overwrite work
   you did not write.

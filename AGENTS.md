@@ -11,17 +11,19 @@ re-check for divergence immediately before pushing.
 
 | What | Value |
 |---|---|
-| Frontend | https://yellow-ground-05896030f.6.azurestaticapps.net |
-| Backend | https://trap-chat-api.lemonpond-8d23f386.eastus.azurecontainerapps.io |
+| Frontend | https://zealous-bay-02a100210.3.azurestaticapps.net |
+| Backend | https://trap-chat-api.bluerock-306ed9db.centralus.azurecontainerapps.io |
 | Health | `/api/health` |
 | Subscription | `4f070006-f5e7-471d-a859-b15a2a8ee406` (oyamaProductions) |
-| Resource group | `rg-trap-chat-prod` (East US) |
+| Resource group | `rg-trap-chat-prod` (Central US) |
 | Container App | `trap-chat-api` in env `cae-trap-chat-prod` |
 | Static Web App | `stapp-trap-chat-prod` |
 | Durable storage | Azure Files share `trapchat-data` on `trpchat4f070006f5`, mounted at `/data` |
 
-The backend FQDN contains a generated environment segment
-(`lemonpond-8d23f386`). Never hardcode it; read it from Azure.
+Both hostnames contain generated segments and change whenever the
+resource is recreated, as the Central US move proved. Never hardcode
+either one: the frontend build reads the backend FQDN from Azure, and
+Terraform reads the frontend hostname off the Static Web App resource.
 
 ## Delivery model: push to deploy
 
@@ -118,6 +120,20 @@ Always read the plan for destroys before approving an apply.
   `backend/api/index.py` serverless entrypoint were removed. Do not
   reintroduce them or add `VERCEL` environment branches to the backend.
 
+## Everything lives in Central US
+
+All resources sit in `centralus`, and every resource inherits the resource
+group's location. Do not reintroduce a separate `location` variable: the
+Static Web App used to read one independently, which is how the frontend
+ended up in East US 2 while the backend sat in East US.
+
+Region is a force-new property, so changing it destroys and recreates
+everything, which wipes the Azure Files share and issues brand new
+hostnames. If you ever have to do it again: back up
+`trapchat.db` off the share first, and expect two transient failures that
+clear on a re-run, a provider inconsistency recreating the Static Web App
+and a 404 reading storage keys under a just-released account name.
+
 ## Frontend and backend contracts
 
 These break silently: nothing fails to compile, the UI just renders
@@ -135,6 +151,20 @@ guards them.
 - **Match players are objects, not strings.** `/api/matches/quick` returns
   `players: [{display_name}]` to match the `MatchmakingResponse` interface
   and the `player_joined` event.
+- **Auth cannot depend on cookies.** The frontend and backend are on
+  different sites, so every cookie the backend sets is a third-party cookie:
+  Chrome incognito drops it outright, which made guests fail with
+  `401 guest session required`. Login and register return the JWT in the
+  body, the client stores it and sends `Authorization: Bearer`, guests send
+  `X-Guest-Session`, and the socket passes both in its handshake `auth`
+  payload. Cookies remain only as a same-site convenience.
+- **The socket's identity is fixed at handshake time.** It is captured on
+  connect and kept in `SOCKET_IDENTITIES`, so the client must reconnect
+  after every auth transition or the socket stays anonymous and every
+  `join_match` is rejected.
+- **Two tabs of one browser are one player.** They share a cookie jar and
+  localStorage, so signing in as a guest twice gives you the same guest.
+  Test with two separate browsers, or one normal window and one incognito.
 
 ## Deployment semantics you must not break
 
