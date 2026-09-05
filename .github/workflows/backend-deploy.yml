@@ -43,9 +43,5 @@ jobs:
           tags: |
             ghcr.io/itmeansbigmountain/trap-chat-backend:${{ github.sha }}
             ghcr.io/itmeansbigmountain/trap-chat-backend:latest
-      - name: Make runtime image publicly pullable
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh api --method PATCH /user/packages/container/trap-chat-backend/visibility -f visibility=public
       - name: Verify published image
         run: docker pull ghcr.io/itmeansbigmountain/trap-chat-backend:${{ github.sha }}
