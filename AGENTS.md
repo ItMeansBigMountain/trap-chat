@@ -7,6 +7,22 @@ Multiple agents work on this repo concurrently. **Never force-push, revert,
 or broadly reformat work you did not write.** Always `git fetch origin` and
 re-check for divergence immediately before pushing.
 
+## Current deployment
+
+| What | Value |
+|---|---|
+| Frontend | https://yellow-ground-05896030f.6.azurestaticapps.net |
+| Backend | https://trap-chat-api.lemonpond-8d23f386.eastus.azurecontainerapps.io |
+| Health | `/api/health` |
+| Subscription | `4f070006-f5e7-471d-a859-b15a2a8ee406` (oyamaProductions) |
+| Resource group | `rg-trap-chat-prod` (East US) |
+| Container App | `trap-chat-api` in env `cae-trap-chat-prod` |
+| Static Web App | `stapp-trap-chat-prod` |
+| Durable storage | Azure Files share `trapchat-data` on `trpchat4f070006f5`, mounted at `/data` |
+
+The backend FQDN contains a generated environment segment
+(`lemonpond-8d23f386`). Never hardcode it; read it from Azure.
+
 ## Delivery model: push to deploy
 
 There are **no manual deployments and no manual applies**. Nothing is
