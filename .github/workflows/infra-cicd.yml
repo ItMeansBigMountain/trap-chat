@@ -1,4 +1,4 @@
-name: Infra
+name: infra CICD
 
 # Pipeline shape: plan runs automatically on every infra change, then apply
 # waits behind a manual approval gate.
@@ -14,12 +14,12 @@ on:
   pull_request:
     paths:
       - 'infra/terraform/**'
-      - '.github/workflows/infra.yml'
+      - '.github/workflows/infra-cicd.yml'
   push:
     branches: [main]
     paths:
       - 'infra/terraform/**'
-      - '.github/workflows/infra.yml'
+      - '.github/workflows/infra-cicd.yml'
   workflow_dispatch:
     inputs:
       force_unlock_id:

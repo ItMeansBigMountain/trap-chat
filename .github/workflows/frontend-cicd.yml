@@ -1,0 +1,122 @@
+name: frontend CICD
+
+# Full build-and-deploy pipeline for the Expo web frontend. Builds are not
+# artifacted between pipelines: typecheck, web export, and deploy all happen
+# in this one workflow.
+#
+# Triggers:
+#   - push to main touching frontend/expo/  -> typecheck, build, deploy
+#   - pull request touching frontend/expo/  -> typecheck and build only
+#   - after a successful "infra CICD"       -> rebuild against the new backend
+#
+# There are no manual deployment steps. Push a change to deploy it.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'frontend/expo/**'
+      - '.github/workflows/frontend-cicd.yml'
+  pull_request:
+    paths:
+      - 'frontend/expo/**'
+      - '.github/workflows/frontend-cicd.yml'
+  workflow_run:
+    workflows: ["infra CICD"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: trap-chat-frontend-cicd
+  cancel-in-progress: false
+
+env:
+  RESOURCE_GROUP: rg-trap-chat-prod
+  CONTAINER_APP_NAME: trap-chat-api
+  STATIC_WEB_APP_NAME: stapp-trap-chat-prod
+
+jobs:
+  frontend:
+    name: Build and deploy frontend
+    runs-on: ubuntu-latest
+    # Never deploy off the back of a failed infra run.
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/expo/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend/expo
+        run: npm ci
+
+      - name: Typecheck
+        working-directory: frontend/expo
+        run: npx tsc --noEmit
+
+      # On a pull request there is no deploy, so the bundle only needs to
+      # compile. Use a placeholder that is obviously not a real backend.
+      - name: Build (pull request check only)
+        if: github.event_name == 'pull_request'
+        working-directory: frontend/expo
+        run: npm run build:web
+        env:
+          EXPO_PUBLIC_API_URL: https://backend.invalid
+          EXPO_PUBLIC_SOCKET_URL: https://backend.invalid
+
+      # --- Everything below deploys. Pull requests stop at the build above. ---
+
+      - name: Azure login
+        if: github.event_name != 'pull_request'
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      # Read the backend hostname from Azure itself so the published bundle
+      # can never contain a guessed, stale or hand-typed URL.
+      - name: Resolve verified backend URL
+        if: github.event_name != 'pull_request'
+        id: backend_url
+        run: |
+          fqdn=$(az containerapp show --name "$CONTAINER_APP_NAME" --resource-group "$RESOURCE_GROUP" --query properties.configuration.ingress.fqdn -o tsv 2>/dev/null || true)
+          if [ -z "$fqdn" ]; then
+            echo "::error::Could not resolve the Container App ingress FQDN. Run the infra CICD pipeline first."
+            exit 1
+          fi
+          echo "url=https://${fqdn}" >> "$GITHUB_OUTPUT"
+          echo "Backend URL: https://${fqdn}"
+
+      - name: Export web build
+        if: github.event_name != 'pull_request'
+        working-directory: frontend/expo
+        run: npm run build:web
+        env:
+          EXPO_PUBLIC_API_URL: ${{ steps.backend_url.outputs.url }}
+          EXPO_PUBLIC_SOCKET_URL: ${{ steps.backend_url.outputs.url }}
+
+      - name: Deploy to Azure Static Web Apps
+        if: github.event_name != 'pull_request'
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          action: upload
+          app_location: frontend/expo/dist
+          skip_app_build: true
+          output_location: ''
+
+      - name: Verify frontend
+        if: github.event_name != 'pull_request'
+        run: |
+          hostname=$(az staticwebapp show --name "$STATIC_WEB_APP_NAME" --resource-group "$RESOURCE_GROUP" --query defaultHostname -o tsv)
+          echo "Checking https://${hostname}/"
+          curl --fail --max-time 30 -o /dev/null -w "HTTP %{http_code}\n" "https://${hostname}/"
+          echo "- Frontend: https://${hostname}" >> "$GITHUB_STEP_SUMMARY"
