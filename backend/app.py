@@ -556,28 +556,98 @@ def api_leaderboard(slug):
 # -------------------------
 # SocketIO Events
 # -------------------------
+def socket_player(match_id):
+    token = request.cookies.get('auth_token')
+    user = User.from_token(token) if token else None
+    if user:
+        return MatchPlayer.query.filter_by(match_id=match_id, user_id=user.id).first()
+    guest_session = request.cookies.get('guest_session')
+    if guest_session:
+        return MatchPlayer.query.filter_by(
+            match_id=match_id, guest_session_id=guest_session
+        ).first()
+    return None
+
+
+def require_socket_player(match_id):
+    player = socket_player(match_id)
+    if not player:
+        emit('error', {
+            'message': 'not a player in this match',
+            'code': 'forbidden',
+        })
+    return player
+
+
 @socketio.on('join_match')
 def on_join_match(data):
-    match_id = data.get('match_id')
-    if match_id:
-        join_room(f'match_{match_id}')
-        emit('joined_match', {'match_id': match_id})
+    match_id = data.get('match_id') if isinstance(data, dict) else None
+    player = require_socket_player(match_id)
+    if not player:
+        return
+    join_room(f'match_{match_id}')
+    emit('joined_match', {'match_id': match_id})
+    emit('player_joined', {
+        'match_id': match_id,
+        'player': {'id': player.id, 'display_name': player.display_name},
+    }, to=f'match_{match_id}', include_self=False)
 
 
 @socketio.on('leave_match')
 def on_leave_match(data):
-    match_id = data.get('match_id')
-    if match_id:
-        leave_room(f'match_{match_id}')
+    match_id = data.get('match_id') if isinstance(data, dict) else None
+    player = require_socket_player(match_id)
+    if not player:
+        return
+    leave_room(f'match_{match_id}')
+    emit('player_left', {
+        'match_id': match_id,
+        'player_id': player.id,
+    }, to=f'match_{match_id}')
 
 
 @socketio.on('game_action')
 def on_game_action(data):
-    match_id = data.get('match_id')
-    action = data.get('action')
-    payload = data.get('payload', {})
-    if match_id:
-        emit('game_action', {'action': action, 'payload': payload, 'from': request.sid}, to=f'match_{match_id}', include_self=False)
+    match_id = data.get('match_id') if isinstance(data, dict) else None
+    if not require_socket_player(match_id):
+        return
+    emit('game_action', {
+        'match_id': match_id,
+        'action': data.get('action'),
+        'payload': data.get('payload', {}),
+        'from': request.sid,
+    }, to=f'match_{match_id}', include_self=False)
+
+
+@socketio.on('signal')
+def on_signal(data):
+    match_id = data.get('match_id') if isinstance(data, dict) else None
+    if not require_socket_player(match_id):
+        return
+    if data.get('type') not in {'offer', 'answer', 'candidate'}:
+        emit('error', {'message': 'invalid signal type', 'code': 'invalid_signal'})
+        return
+    signal = dict(data)
+    signal['from'] = request.sid
+    emit('signal', signal, to=f'match_{match_id}', include_self=False)
+
+
+@socketio.on('chat_message')
+def on_chat_message(data):
+    match_id = data.get('match_id') if isinstance(data, dict) else None
+    player = require_socket_player(match_id)
+    if not player:
+        return
+    text = str(data.get('text', '')).strip()
+    if not text or len(text) > 1000:
+        emit('error', {'message': 'message must be 1-1000 characters', 'code': 'invalid_message'})
+        return
+    emit('chat_message', {
+        'match_id': match_id,
+        'from': player.display_name,
+        'text': text,
+        'timestamp': datetime.utcnow().isoformat() + 'Z',
+    }, to=f'match_{match_id}', include_self=False)
 
 
 # -------------------------
