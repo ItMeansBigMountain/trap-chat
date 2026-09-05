@@ -35,7 +35,7 @@ variable "app_service_name" {
 
 variable "app_service_sku" {
   type    = string
-  default = "F1"
+  default = "B1"
 }
 
 variable "frontend_origin" {
