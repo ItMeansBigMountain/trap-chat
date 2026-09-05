@@ -31,7 +31,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: trap-chat-frontend-cicd
+  group: trap-chat-azure-deploy
   cancel-in-progress: false
 
 env:

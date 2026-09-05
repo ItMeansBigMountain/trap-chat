@@ -32,7 +32,7 @@ permissions:
   packages: write
 
 concurrency:
-  group: trap-chat-backend-cicd
+  group: trap-chat-azure-deploy
   cancel-in-progress: false
 
 env:

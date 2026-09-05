@@ -33,7 +33,7 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: trap-chat-terraform-${{ github.ref }}
+  group: trap-chat-azure-deploy
   cancel-in-progress: false
 
 env:

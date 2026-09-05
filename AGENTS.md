@@ -36,7 +36,14 @@ Rules that follow from this shape:
   `workflow_run`, so newly created infrastructure immediately receives the
   current image and a frontend built against the real backend URL. If you
   rename a workflow, fix the `workflow_run.workflows` reference too.
-- Keep each pipeline's `concurrency` group so deploys cannot overlap.
+- **All three pipelines share one `concurrency` group,
+  `trap-chat-azure-deploy`.** This is deliberate and must not be split back
+  into per-pipeline groups. A push that touches both `backend/` and
+  `infra/terraform/` starts two pipelines that both modify the same
+  Container App, and Azure rejects the second with
+  `409 ContainerAppOperationInProgress: Cannot modify a container app
+  because there is an active provisioning operation in progress`. The
+  shared group serialises them instead.
 
 ## The infra approval gate
 
