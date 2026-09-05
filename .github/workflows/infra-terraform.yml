@@ -16,6 +16,11 @@ on:
         description: Apply the reviewed Terraform plan
         type: boolean
         default: false
+      force_unlock_id:
+        description: Stale Terraform lock ID to recover after confirming no run is active
+        type: string
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -67,6 +72,9 @@ jobs:
         run: terraform fmt -check -recursive
       - name: Terraform init
         run: terraform init -backend-config=use_azuread_auth=true
+      - name: Recover explicitly identified stale Terraform lock
+        if: github.event_name == 'workflow_dispatch' && inputs.force_unlock_id != ''
+        run: terraform force-unlock -force "${{ inputs.force_unlock_id }}"
       - name: Import pre-existing Azure resources into Terraform state
         shell: bash
         run: |
