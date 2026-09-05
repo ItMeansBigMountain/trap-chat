@@ -8,6 +8,11 @@ variable "location" {
   default = "East US 2"
 }
 
+variable "resource_group_location" {
+  type    = string
+  default = "East US"
+}
+
 variable "resource_group_name" {
   type    = string
   default = "rg-trap-chat-prod"
@@ -39,5 +44,9 @@ variable "tags" {
     DeploymentTool = "GitHubActions"
     Repository     = "ItMeansBigMountain/trap-chat"
     CostGuard      = "free-tier"
+    app            = "trap-chat"
+    cost-center    = "free-tier"
+    environment    = "production"
+    owner          = "hermes"
   }
 }

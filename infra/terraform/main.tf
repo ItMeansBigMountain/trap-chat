@@ -4,7 +4,7 @@ locals {
 
 resource "azurerm_resource_group" "trap_chat" {
   name     = var.resource_group_name
-  location = var.location
+  location = var.resource_group_location
   tags     = local.tags
 }
 
@@ -15,6 +15,13 @@ resource "azurerm_static_web_app" "frontend" {
   sku_tier            = "Free"
   sku_size            = "Free"
   tags                = local.tags
+
+  lifecycle {
+    # Azure linked the GitHub repository when the SWA was bootstrapped. The
+    # provider requires the deployment token to configure this linkage, so
+    # preserve the imported values rather than removing them during adoption.
+    ignore_changes = [repository_url, repository_branch]
+  }
 }
 
 resource "azurerm_consumption_budget_resource_group" "trap_chat" {

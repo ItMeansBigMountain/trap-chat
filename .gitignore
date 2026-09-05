@@ -7,3 +7,6 @@ trapchat.db
 node_modules
 .instagraz
 .vercel
+
+# Terraform working directory
+infra/terraform/.terraform/
