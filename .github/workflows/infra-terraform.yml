@@ -36,6 +36,7 @@ env:
   ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
   ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
   ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+  ARM_ACCESS_KEY: ${{ secrets.TFSTATE_STORAGE_KEY }}
   TF_IN_AUTOMATION: true
   TF_INPUT: false
 
@@ -71,7 +72,7 @@ jobs:
       - name: Terraform fmt check
         run: terraform fmt -check -recursive
       - name: Terraform init
-        run: terraform init -backend-config=use_azuread_auth=true
+        run: terraform init
       - name: Recover explicitly identified stale Terraform lock
         if: github.event_name == 'workflow_dispatch' && inputs.force_unlock_id != ''
         run: terraform force-unlock -force "${{ inputs.force_unlock_id }}"
