@@ -33,7 +33,7 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: trap-chat-azure-deploy
+  group: trap-chat-infra-cicd
   cancel-in-progress: false
 
 env:
@@ -141,6 +141,24 @@ jobs:
         with:
           name: trap-chat-terraform-plan
           path: infra/terraform
+      # backend CICD can be mid-rollout on the same Container App. Azure
+      # rejects a second concurrent modification with 409
+      # ContainerAppOperationInProgress and that kills the whole apply, so
+      # wait for the in-flight operation to drain first.
+      - name: Wait for Container App to be idle
+        run: |
+          for i in $(seq 1 60); do
+            state=$(az containerapp show --name trap-chat-api \
+              --resource-group rg-trap-chat-prod \
+              --query properties.provisioningState -o tsv 2>/dev/null || echo NotFound)
+            echo "attempt $i: provisioningState=$state"
+            case "$state" in
+              InProgress|Provisioning|Deleting) sleep 10 ;;
+              *) exit 0 ;;
+            esac
+          done
+          echo "::warning::Container App still provisioning after 10 minutes; attempting apply anyway"
+
       # Applies the exact plan file that was reviewed and approved. If state
       # moved since the plan was taken, Terraform refuses the stale plan
       # rather than applying something unreviewed.

@@ -36,14 +36,15 @@ Rules that follow from this shape:
   `workflow_run`, so newly created infrastructure immediately receives the
   current image and a frontend built against the real backend URL. If you
   rename a workflow, fix the `workflow_run.workflows` reference too.
-- **All three pipelines share one `concurrency` group,
-  `trap-chat-azure-deploy`.** This is deliberate and must not be split back
-  into per-pipeline groups. A push that touches both `backend/` and
-  `infra/terraform/` starts two pipelines that both modify the same
-  Container App, and Azure rejects the second with
-  `409 ContainerAppOperationInProgress: Cannot modify a container app
-  because there is an active provisioning operation in progress`. The
-  shared group serialises them instead.
+- **Each pipeline keeps its own `concurrency` group.** Do not give them a
+  shared group to serialise them. GitHub allows only one running plus one
+  pending run per group and **cancels** the rest, so a push that starts all
+  three pipelines loses two of them outright. This was tried and reverted.
+- **Both `infra CICD` and `backend CICD` modify the same Container App**,
+  and Azure rejects a second concurrent modification with
+  `409 ContainerAppOperationInProgress`. Each therefore polls
+  `provisioningState` and waits for the in-flight operation to drain before
+  touching `trap-chat-api`. Keep those waits.
 
 ## The infra approval gate
 

@@ -32,7 +32,7 @@ permissions:
   packages: write
 
 concurrency:
-  group: trap-chat-azure-deploy
+  group: trap-chat-backend-cicd
   cancel-in-progress: false
 
 env:
@@ -94,6 +94,19 @@ jobs:
         if: github.event_name != 'pull_request'
         run: |
           az extension add --name containerapp --upgrade -y
+          # infra CICD can be mid-apply on the same Container App. Azure
+          # rejects a second concurrent modification with 409
+          # ContainerAppOperationInProgress, so wait for it to drain first.
+          for i in $(seq 1 60); do
+            state=$(az containerapp show --name "$CONTAINER_APP_NAME" \
+              --resource-group "$RESOURCE_GROUP" \
+              --query properties.provisioningState -o tsv 2>/dev/null || echo NotFound)
+            echo "attempt $i: provisioningState=$state"
+            case "$state" in
+              InProgress|Provisioning|Deleting) sleep 10 ;;
+              *) break ;;
+            esac
+          done
           az containerapp update \
             --name "$CONTAINER_APP_NAME" \
             --resource-group "$RESOURCE_GROUP" \
