@@ -53,3 +53,37 @@ def test_two_distinct_guests_activate_a_quick_match(client):
     assert second.get_json()["match_id"] == first.get_json()["match_id"]
     assert second.get_json()["status"] == "active"
     assert len(second.get_json()["players"]) == 2
+
+
+def test_quick_match_ignores_a_stale_waiting_match(tmp_path):
+    """A waiting match whose player closed their tab hours ago must not be
+    handed to the next person: they would sit in a room with a ghost."""
+    import importlib
+    import os
+    from datetime import datetime, timedelta
+
+    os.environ["DATABASE_URL"] = f"sqlite:///{tmp_path / 'trapchat.db'}"
+    os.environ["SECRET_KEY"] = "test-secret"
+    module = importlib.import_module("app")
+    app = module.app
+
+    abandoner = app.test_client()
+    abandoner.post("/api/auth/register", json={"username": "ghost_player", "password": "Str0ng-Pass!1"})
+    first = abandoner.post("/api/matches/quick", json={"game_slug": "rapbattle"})
+    assert first.status_code == 200
+    stale_match_id = first.get_json()["match_id"]
+
+    # Age that queued match well past any sensible window.
+    with app.app_context():
+        stale = module.db.session.get(module.Match, stale_match_id)
+        stale.created_at = datetime.utcnow() - timedelta(hours=3)
+        module.db.session.commit()
+
+    newcomer = app.test_client()
+    newcomer.post("/api/auth/register", json={"username": "fresh_player", "password": "Str0ng-Pass!1"})
+    second = newcomer.post("/api/matches/quick", json={"game_slug": "rapbattle"})
+
+    assert second.status_code == 200, second.get_data(as_text=True)
+    body = second.get_json()
+    assert body["match_id"] != stale_match_id, "joined an abandoned queue instead of starting a fresh one"
+    assert body["status"] == "waiting"

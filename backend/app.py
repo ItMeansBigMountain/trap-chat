@@ -21,6 +21,8 @@ DEFAULT_DB_PATH = os.path.join(BASE_DIR, 'trapchat.db')
 DB_PATH = os.environ.get('DATABASE_URL', f'sqlite:///{DEFAULT_DB_PATH}')
 SECRET_KEY = os.environ.get('SECRET_KEY', 'dev-secret-change-in-production')
 JWT_EXP_HOURS = 24 * 30  # 30 days
+# How long a queued match stays joinable. Past this it is treated as abandoned.
+QUEUE_TIMEOUT_MINUTES = 5
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
 app.config['SQLALCHEMY_DATABASE_URI'] = DB_PATH
@@ -482,9 +484,18 @@ def api_quick_match():
         MatchPlayer.user_id == request.user.id
         if request.user else MatchPlayer.guest_session_id == guest_session
     )
+    # Someone who queued and closed their tab leaves a 'waiting' match behind
+    # forever. Handing that to the next player puts them in a room with a ghost
+    # that can never arrive, so only consider recently queued matches.
+    fresh_cutoff = datetime.utcnow() - timedelta(minutes=QUEUE_TIMEOUT_MINUTES)
     existing = (
         Match.query.join(MatchPlayer)
-        .filter(Match.game_id == game.id, Match.status == 'waiting', identity_filter)
+        .filter(
+            Match.game_id == game.id,
+            Match.status == 'waiting',
+            Match.created_at >= fresh_cutoff,
+            identity_filter,
+        )
         .first()
     )
     if existing:
@@ -498,7 +509,8 @@ def api_quick_match():
 
     # Find a waiting match the caller has not already joined, or create one.
     waiting = Match.query.filter_by(game_id=game.id, status='waiting').filter(
-        ~Match.players.any(identity_filter)
+        Match.created_at >= fresh_cutoff,
+        ~Match.players.any(identity_filter),
     ).first()
     if waiting:
         match = waiting
