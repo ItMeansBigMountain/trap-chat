@@ -33,11 +33,11 @@ variable "app_service_name" {
   default = "trap-chat-api"
 }
 
+# F1 is intentionally used for the public Azure preview because this
+# subscription has no B1 quota. It is not suitable for production realtime
+# traffic; promote only after quota is granted and this is raised to B1+.
 variable "app_service_sku" {
   type    = string
-  # F1 is intentionally used for the public Azure preview because this
-  # subscription has no B1 quota. It is not suitable for production realtime
-  # traffic; promote only after quota is granted and this is raised to B1+.
   default = "F1"
 }
 
