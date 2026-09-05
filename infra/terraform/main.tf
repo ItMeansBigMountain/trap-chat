@@ -15,10 +15,14 @@ resource "azurerm_resource_group" "trap_chat" {
 resource "azurerm_static_web_app" "frontend" {
   name                = var.static_web_app_name
   resource_group_name = azurerm_resource_group.trap_chat.name
-  location            = var.location
-  sku_tier            = "Free"
-  sku_size            = "Free"
-  tags                = local.tags
+  # Inherit the resource group's region like every other resource here. This
+  # used to read var.location independently, which is how the frontend ended
+  # up in East US 2 while the backend sat in East US. One source of truth for
+  # the region means they cannot drift apart again.
+  location = azurerm_resource_group.trap_chat.location
+  sku_tier = "Free"
+  sku_size = "Free"
+  tags     = local.tags
 
   lifecycle { ignore_changes = [repository_url, repository_branch] }
 }
