@@ -33,6 +33,15 @@ export interface VoteState {
   my_vote: number | null;
 }
 
+// What the server knows about a queue, so the screen can state it rather than
+// infer it from nothing having happened yet.
+export interface QueueState {
+  game: string;
+  game_name: string;
+  others_waiting: number;
+  you_are_waiting: boolean;
+}
+
 export interface SocialRoom {
   code: string;
   name: string;
@@ -188,6 +197,10 @@ class ApiService {
 
   async submitResult(matchId: number, result: GameResult): Promise<{ ok: boolean }> {
     return this.request(`/api/matches/${matchId}/submit`, { method: 'POST', body: JSON.stringify(result) });
+  }
+
+  async getQueue(gameSlug: GameSlug): Promise<QueueState> {
+    return this.request(`/api/games/${gameSlug}/queue`);
   }
 
   async getVotes(matchId: number): Promise<VoteState> {

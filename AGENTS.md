@@ -219,6 +219,25 @@ project. Every cause was different, so check these before assuming a new one:
 Asking to queue again is also the recovery path: it returns an
 already-started match, so missing the `match_start` broadcast is survivable.
 
+## The queue states facts, it does not infer them
+
+"Nobody else is queued" used to be a guess: the screen said it because nothing
+had happened yet. That guess is wrong whenever two people queue for different
+games, and the result looks exactly like broken matchmaking -- which it was
+reported as, twice, with two real players on screen.
+
+`GET /api/games/<slug>/queue` answers it properly: how many *other* fresh,
+present players are waiting for that game. The Competitive banner polls it and
+names the queue you are in, so two people in different queues can see that
+immediately instead of each concluding the app is broken.
+
+- **Your own entry is never counted as an opponent.** Counting it would promise
+  a match the server will not make.
+- **Stale and in-progress entries do not count.** Someone who queued an hour
+  ago is not an opponent, and promising one is worse than an empty queue.
+- The banner never tells anyone to open a second browser. That is a testing
+  technique, not advice for a person using the app.
+
 ## Room lifetime, and how presence is decided
 
 A room disappears once nobody has been in it for `EMPTY_ROOM_TIMEOUT_SECONDS`

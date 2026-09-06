@@ -40,7 +40,7 @@ with sync_playwright() as p:
 
     to_competitive(p1)
     p1.get_by_text("Push-Ups", exact=True).click(); p1.wait_for_timeout(3000)
-    check("player 1 queues", "Finding an opponent" in p1.inner_text("body"), p1.inner_text("body")[:110].replace("\n"," | "))
+    check("player 1 queues", "queue" in p1.inner_text("body").lower(), p1.inner_text("body")[:140].replace(chr(10), " | "))
 
     to_competitive(p2)
     p2.get_by_text("Push-Ups", exact=True).click(); p2.wait_for_timeout(6000)
@@ -52,26 +52,49 @@ with sync_playwright() as p:
     check("the rep counter is present", "YOU" in b1 and "OPPONENT" in b1)
     p1.screenshot(path="/tmp/ranked.png", full_page=True)
 
-    # A queue nobody else is in looks exactly like a broken one. It has to say
-    # so, because two tabs of one browser are one account and never pair.
-    solo=b.new_context(viewport={"width":390,"height":844}, is_mobile=True, has_touch=True,
-                       permissions=["camera","microphone"]).new_page()
-    guest(solo,f"rc{t}")
-    to_competitive(solo)
-    solo.get_by_text("Rap Battle", exact=True).click(); solo.wait_for_timeout(3000)
-    early=solo.inner_text("body")
+    # A queue nobody else is in looks exactly like a broken one, and so does a
+    # queue whose opponent picked a different game. The banner has to state
+    # which queue you are in and who is actually in it, from the server.
+    def fresh_guest(name):
+        page = b.new_context(viewport={"width": 390, "height": 844}, is_mobile=True,
+                             has_touch=True, permissions=["camera", "microphone"]).new_page()
+        guest(page, name)
+        to_competitive(page)
+        return page
+
+    solo = fresh_guest(f"rc{t}")
+    solo.get_by_text("Rap Battle", exact=True).click(); solo.wait_for_timeout(6000)
+    early = solo.inner_text("body")
     if "Ranked 1v1" in early:
-        # A real stranger was waiting. Nothing to assert about an empty queue,
-        # and calling that a failure would train everyone to ignore this file.
         print("SKIP  the lone-queue checks: someone else was queued for Rap Battle", flush=True)
     else:
-        check("a lone queue shows it is still counting", re.search(r"rating . \d+s", early) is not None,
-              early[:90].replace("\n"," | "))
-        check("a lone queue names who is queued", "Queued as" in early and f"rc{t}" in early,
-              early[:110].replace(chr(10)," | "))
-        solo.wait_for_timeout(14000); late=solo.inner_text("body")
-        check("a lone queue explains why nothing happens", "Nobody else is queued" in late,
-              late[:150].replace("\n"," | "))
+        check("a lone queue names the game it is for", "Rap Battle" in early,
+              early[:110].replace(chr(10), " | "))
+        check("a lone queue says you are the only one",
+              "only one in this queue" in early, early[:130].replace(chr(10), " | "))
+
+        # The bug this was all reported as: two people queue, for different
+        # games, and both wait forever while each looks broken.
+        other = fresh_guest(f"rd{t}")
+        other.get_by_text("Looks Battle", exact=True).click(); other.wait_for_timeout(6000)
+        other_body = other.inner_text("body")
+        if "Ranked 1v1" in other_body:
+            print("SKIP  different-queue check: someone was queued for Looks Battle", flush=True)
+        else:
+            check("a different game is a different queue",
+                  "only one in this queue" in other_body,
+                  other_body[:130].replace(chr(10), " | "))
+
+        # ...and picking the same one pairs them.
+        joiner = fresh_guest(f"re{t}")
+        joiner.get_by_text("Rap Battle", exact=True).click(); joiner.wait_for_timeout(7000)
+        solo.wait_for_timeout(3000)
+        # A paired Rap Battle opens its own beat picker, not the generic
+        # ranked match screen.
+        check("queueing for the same game pairs both sides",
+              "Pick a beat" in joiner.inner_text("body") and "Pick a beat" in solo.inner_text("body"),
+              joiner.inner_text("body")[:110].replace(chr(10), " | "))
+
 
 
     print("=== errors p1 ==="); [print("  ",x[:150]) for x in e1[:5]]

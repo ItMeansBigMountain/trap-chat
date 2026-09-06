@@ -12,6 +12,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useApp } from '../context/AppContext';
+import api, { QueueState } from '../services/api';
 import { GameSlug } from '../types';
 
 const ART: Record<string, { icon: string; blurb: string }> = {
@@ -25,35 +26,52 @@ export function CompetitiveScreen() {
   const { state, startSearch, cancelSearch } = useApp();
   const [error, setError] = useState<string | null>(null);
   const [waitedSeconds, setWaitedSeconds] = useState(0);
+  const [queuedFor, setQueuedFor] = useState<GameSlug | null>(null);
+  const [queue_, setQueueState] = useState<QueueState | null>(null);
   const competitive = state.games.filter((g) => g.category === 'competitive');
   const isSearching = state.isSearching;
 
-  // Name the identity that is queued. Two tabs of one browser share
-  // localStorage and are therefore one person, and seeing the same name in
-  // both is the fastest way to notice that.
-  const queuedAs =
-    state.auth.status === 'authenticated'
-      ? state.auth.user.username
-      : state.auth.status === 'guest'
-      ? state.auth.session.display_name
-      : null;
-
   // A queue with nobody else in it looks identical to a broken one. Count the
-  // wait so it is visibly progressing, then explain what is actually needed.
+  // wait so it is visibly progressing.
   useEffect(() => {
     if (!isSearching) {
       setWaitedSeconds(0);
+      setQueueState(null);
       return;
     }
     const tick = setInterval(() => setWaitedSeconds((s) => s + 1), 1000);
     return () => clearInterval(tick);
   }, [isSearching]);
 
+  // Ask the server who is actually waiting rather than inferring it from the
+  // fact that nothing has happened. Inferring it was wrong whenever two people
+  // queued for different games, which looks exactly like broken matchmaking.
+  useEffect(() => {
+    if (!isSearching || !queuedFor) return;
+    let stopped = false;
+    const poll = async () => {
+      try {
+        const next = await api.getQueue(queuedFor);
+        if (!stopped) setQueueState(next);
+      } catch {
+        // A failed poll is not worth surfacing: the queue itself is fine.
+      }
+    };
+    void poll();
+    const timer = setInterval(poll, 4000);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [isSearching, queuedFor]);
+
   const queue = async (slug: GameSlug) => {
     setError(null);
+    setQueuedFor(slug);
     try {
       await startSearch(slug);
     } catch (err: any) {
+      setQueuedFor(null);
       setError(err?.message ?? 'Could not join the queue');
     }
   };
@@ -65,13 +83,21 @@ export function CompetitiveScreen() {
           <ActivityIndicator color="#CCFF00" />
           <View style={{ flex: 1 }}>
             <Text style={styles.queuedTitle}>
-              Finding an opponent near your rating · {waitedSeconds}s
+              {queue_?.game_name ?? 'Finding an opponent'} · {waitedSeconds}s
             </Text>
-            {queuedAs ? <Text style={styles.queuedAs}>Queued as {queuedAs}</Text> : null}
+            <Text style={styles.queuedAs}>
+              {queue_ === null
+                ? 'Joining the queue…'
+                : queue_.others_waiting > 0
+                ? `${queue_.others_waiting} other ${
+                    queue_.others_waiting === 1 ? 'player' : 'players'
+                  } waiting — pairing you now`
+                : 'You are the only one in this queue'}
+            </Text>
             <Text style={styles.queuedHint}>
-              {waitedSeconds < 15
-                ? 'You will drop into the match automatically.'
-                : 'Nobody else is queued for this game yet. If your other tab shows this same name, it is the same account: two tabs of one browser share a login and cannot be matched together. Use a different browser or a private window.'}
+              {queue_ !== null && queue_.others_waiting === 0 && waitedSeconds >= 12
+                ? 'Each game has its own queue, so an opponent has to pick this same one. Leave it running and you will drop in the moment somebody does.'
+                : 'You will drop into the match automatically.'}
             </Text>
           </View>
           <TouchableOpacity onPress={cancelSearch} style={styles.cancel}>

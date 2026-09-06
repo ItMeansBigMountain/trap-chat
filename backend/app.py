@@ -1193,6 +1193,46 @@ def api_battle_vote(match_id):
     return jsonify({'match_id': match.id, 'tally': tally, 'my_vote': target.id})
 
 
+@app.route('/api/games/<slug>/queue', methods=['GET'])
+@guest_or_auth
+def api_game_queue(slug):
+    """Who is actually waiting for this game.
+
+    The Competitive screen used to infer "nobody else is queued" from the fact
+    that nothing had happened yet, which is a guess dressed as a fact and was
+    wrong whenever two people queued for different games. The server knows the
+    answer, so it says it.
+    """
+    game = Game.query.filter_by(slug=slug).first_or_404()
+    fresh_cutoff = datetime.utcnow() - timedelta(minutes=QUEUE_TIMEOUT_MINUTES)
+    waiting = Match.query.filter(
+        Match.game_id == game.id,
+        Match.status == 'waiting',
+        Match.created_at >= fresh_cutoff,
+    ).all()
+
+    mine = 0
+    others = 0
+    for match in waiting:
+        for player in present_players(match):
+            is_me = (
+                player.user_id == request.user.id
+                if request.user
+                else player.guest_session_id == guest_session_id()
+            )
+            if is_me:
+                mine += 1
+            else:
+                others += 1
+
+    return jsonify({
+        'game': game.slug,
+        'game_name': game.name,
+        'others_waiting': others,
+        'you_are_waiting': mine > 0,
+    })
+
+
 @app.route('/api/leaderboard/<slug>', methods=['GET'])
 def api_leaderboard(slug):
     game = Game.query.filter_by(slug=slug).first_or_404()

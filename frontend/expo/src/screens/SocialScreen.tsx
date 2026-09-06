@@ -34,10 +34,6 @@ import { T } from '../theme';
 
 const SCREEN_HEIGHT = Dimensions.get('window').height;
 
-// Whether the feed has already started itself. Module scope on purpose: this
-// is session state, not component state. Leaving a room unmounts nothing, and
-// remounting on every trip through Browse must not drag you back into a call.
-let autoStarted = false;
 
 interface Line {
   id: string;
@@ -104,15 +100,9 @@ export function SocialScreen() {
     nextRef.current = next;
   }, [next]);
 
-  // A feed you have to press Start on is not a feed. TikTok is already playing
-  // when you land, so this is too. Once per session only: after that a null
-  // match means you deliberately left, and re-searching would make Leave
-  // impossible to use.
-  useEffect(() => {
-    if (autoStarted || match || connecting) return;
-    autoStarted = true;
-    void nextRef.current();
-  }, [match, connecting]);
+  // No auto-start. Landing straight in a video call with a stranger is not
+  // something to do on someone's behalf, so entering the feed stays a
+  // deliberate tap.
 
   // Swipe up to skip. The buttons do the same thing, because a swipe is
   // awkward with a mouse and this has to work in a desktop browser too.
