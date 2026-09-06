@@ -24,7 +24,7 @@ def guest(pg, name):
     pg.get_by_text("Continue as guest", exact=True).click(); pg.wait_for_timeout(4500)
 
 def to_competitive(smoke_pg):
-    # Nav is the bottom tab bar now, always on screen, so no drawer to open.
+    smoke_pg.locator('[aria-label="Open menu"]').first.click(); smoke_pg.wait_for_timeout(800)
     smoke_pg.locator('[aria-label="Competitive"]').last.click(); smoke_pg.wait_for_timeout(1500)
 
 with sync_playwright() as p:

@@ -19,7 +19,7 @@ import time
 from playwright.sync_api import sync_playwright, Page
 
 DEFAULT_TARGET = "http://127.0.0.1:8100/"
-PAGES = ["For You", "Browse", "Competitive", "Leaderboards", "Profile"]
+PAGES = ["Random", "Browse", "Competitive", "Leaderboards", "Profile"]
 
 # Nav labels match the page names now that both layouts use one list.
 NAV_LABELS: dict[str, str] = {}
@@ -27,7 +27,7 @@ NAV_LABELS: dict[str, str] = {}
 # What proves a page actually rendered. Matching on visible copy rather than
 # test ids keeps these honest: if the page is blank the assertion fails.
 PAGE_MARKERS = {
-    "For You": ["Swipe up to skip", "Drop into a channel", "Searching"],
+    "Random": ["Swipe up to skip", "Drop into a channel", "Searching"],
     "Browse": ["JOIN BY CODE", "START A ROOM"],
     "Competitive": ["Ranked matchmaking"],
     "Leaderboards": ["No scores yet", "Rap Battle"],
@@ -82,11 +82,11 @@ class Smoke:
         self.page.wait_for_timeout(500)
 
     def goto(self, name: str) -> None:
-        # Nav lives in the bottom tab bar on a phone and the sidebar on the
-        # web, and both are always on screen, so the drawer is not involved.
-        # aria-label is the only thing that distinguishes a tab from the page
-        # title, which can carry the same words.
-        self.close_nav()
+        # The phone keeps the nav behind the hamburger; the sidebar is always
+        # on screen and has no hamburger to open. aria-label is what separates
+        # a nav row from the page title, which can carry the same words.
+        if self.page.locator('[aria-label="Open menu"]').count():
+            self.open_nav()
         self.page.locator(f'[aria-label="{NAV_LABELS.get(name, name)}"]').last.click()
         self.page.wait_for_timeout(1400)
 
@@ -213,6 +213,8 @@ def run_desktop(smoke: Smoke) -> None:
                 body[:120].replace("\n", " | "))
     smoke.check("web: no hamburger on the sidebar layout",
                 page.locator('[aria-label="Open menu"]').count() == 0)
+    smoke.check("web: Social opens into Random and Browse",
+                "Random" in body and "Browse" in body and "Social" in body)
 
     for name in PAGES:
         smoke.goto(name)

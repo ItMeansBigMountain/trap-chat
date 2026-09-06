@@ -15,7 +15,7 @@ import { ScreenFrame, PageName } from './src/components/ScreenFrame';
 import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 
 const TITLES: Record<PageName, string> = {
-  'For You': 'For You',
+  Random: 'Random',
   Browse: 'Browse',
   Competitive: 'Competitive',
   Leaderboards: 'Leaderboards',
@@ -24,7 +24,7 @@ const TITLES: Record<PageName, string> = {
 
 function AppShell() {
   const { state } = useApp();
-  const [page, setPage] = useState<PageName>('For You');
+  const [page, setPage] = useState<PageName>('Random');
 
   if (state.auth.status === 'loading') {
     return (
@@ -59,8 +59,8 @@ function AppShell() {
 
   return (
     <ScreenFrame title={TITLES[page]} active={page} onNavigate={setPage}>
-      {page === 'For You' && <SocialScreen />}
-      {page === 'Browse' && <BrowseScreen onEntered={() => setPage('For You')} />}
+      {page === 'Random' && <SocialScreen />}
+      {page === 'Browse' && <BrowseScreen onEntered={() => setPage('Random')} />}
       {page === 'Competitive' && <CompetitiveScreen />}
       {page === 'Leaderboards' && <LeaderboardScreen />}
       {page === 'Profile' && <ProfileScreen />}

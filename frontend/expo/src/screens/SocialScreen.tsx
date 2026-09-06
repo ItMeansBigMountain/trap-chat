@@ -1,4 +1,4 @@
-// Trap Chat — For You
+// Trap Chat — Random
 // The doomscroll surface, laid out the way TikTok lays out a feed: the video
 // fills the frame, the action rail runs down the right, and the caption sits
 // bottom-left over the video. Chat is an overlay on the video rather than a
@@ -28,12 +28,16 @@ import api from '../services/api';
 import { GameSlug } from '../types';
 import call, { CallState, videoSupported } from '../services/webrtc';
 import { VideoStage } from '../components/VideoStage';
-import { ActionRail } from '../components/ActionRail';
 import { Icon } from '../components/Icon';
 import { useLayout } from '../hooks/useLayout';
 import { T } from '../theme';
 
 const SCREEN_HEIGHT = Dimensions.get('window').height;
+
+// Whether the feed has already started itself. Module scope on purpose: this
+// is session state, not component state. Leaving a room unmounts nothing, and
+// remounting on every trip through Browse must not drag you back into a call.
+let autoStarted = false;
 
 interface Line {
   id: string;
@@ -99,6 +103,16 @@ export function SocialScreen() {
   useEffect(() => {
     nextRef.current = next;
   }, [next]);
+
+  // A feed you have to press Start on is not a feed. TikTok is already playing
+  // when you land, so this is too. Once per session only: after that a null
+  // match means you deliberately left, and re-searching would make Leave
+  // impossible to use.
+  useEffect(() => {
+    if (autoStarted || match || connecting) return;
+    autoStarted = true;
+    void nextRef.current();
+  }, [match, connecting]);
 
   // Swipe up to skip. The buttons do the same thing, because a swipe is
   // awkward with a mouse and this has to work in a desktop browser too.
@@ -194,7 +208,7 @@ export function SocialScreen() {
     return (
       <View style={styles.empty}>
         <Text style={styles.emptyIcon}>💬</Text>
-        <Text style={styles.emptyTitle}>For You</Text>
+        <Text style={styles.emptyTitle}>Social</Text>
         <Text style={styles.emptyBody}>
           Drop into a channel with whoever is around. Swipe up any time to skip to
           someone new.
@@ -211,30 +225,17 @@ export function SocialScreen() {
     match.players?.find((p) => p.display_name !== me)?.display_name ??
     (match.game?.name ?? 'Room');
 
-  const rail = (
-    <ActionRail
-      avatarLetter={them.charAt(0)}
-      actions={[
-        {
-          key: 'like',
-          icon: 'heart',
-          label: 'Like',
-          active: liked,
-          count: liked ? 1 : 0,
-          onPress: () => setLiked((v) => !v),
-        },
-        { key: 'comment', icon: 'comment', label: 'Comments', count: lines.filter((l) => !l.system).length },
-        {
-          key: 'save',
-          icon: 'bookmark',
-          label: 'Save',
-          active: saved,
-          count: saved ? 1 : 0,
-          onPress: () => setSaved((v) => !v),
-        },
-        { key: 'skip', icon: 'share', label: 'Skip to next', onPress: next },
-      ]}
-    />
+  // Up and down are the only controls a live chat needs: there is nothing to
+  // like, save or share about a person who is on screen for ten seconds.
+  const skipControls = (
+    <View style={styles.arrows}>
+      <TouchableOpacity style={styles.arrow} onPress={next} accessibilityLabel="Previous">
+        <Icon name="chevronUp" size={20} color={T.text} />
+      </TouchableOpacity>
+      <TouchableOpacity style={styles.arrow} onPress={next} accessibilityLabel="Next">
+        <Icon name="chevronDown" size={20} color={T.text} />
+      </TouchableOpacity>
+    </View>
   );
 
   // The video, the caption over it, and the comment overlay. Shared by both
@@ -346,19 +347,7 @@ export function SocialScreen() {
             {stage}
           </Animated.View>
 
-          <View style={styles.wideSide}>
-            {rail}
-            {composer ? null : null}
-          </View>
-
-          <View style={styles.arrows}>
-            <TouchableOpacity style={styles.arrow} onPress={next} accessibilityLabel="Previous">
-              <Icon name="chevronUp" size={20} color={T.text} />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.arrow} onPress={next} accessibilityLabel="Next">
-              <Icon name="chevronDown" size={20} color={T.text} />
-            </TouchableOpacity>
-          </View>
+          {skipControls}
         </View>
         <View style={styles.wideComposer}>{composer}</View>
       </View>
@@ -374,7 +363,7 @@ export function SocialScreen() {
       <Animated.View style={[styles.stage, { transform: [{ translateY: drag }] }]} {...pan.panHandlers}>
         {stage}
         <View style={styles.railOverlay} pointerEvents="box-none">
-          {rail}
+          {skipControls}
         </View>
       </Animated.View>
       {composer}
@@ -390,7 +379,6 @@ const styles = StyleSheet.create({
   wideRoot: { flex: 1, backgroundColor: T.bg },
   wideCentre: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 18 },
   wideCard: { backgroundColor: '#111', borderRadius: T.radius, overflow: 'hidden' },
-  wideSide: { justifyContent: 'flex-end', paddingBottom: 30 },
   arrows: { gap: 12, justifyContent: 'center' },
   arrow: {
     width: 40, height: 40, borderRadius: 20,
@@ -406,7 +394,7 @@ const styles = StyleSheet.create({
 
   railOverlay: { position: 'absolute', right: 10, bottom: 120 },
 
-  commentLayer: { position: 'absolute', left: 0, right: 74, bottom: 96, maxHeight: 190 },
+  commentLayer: { position: 'absolute', left: 0, right: 74, bottom: 134, maxHeight: 170 },
   chat: { flexGrow: 0 },
   chatContent: { paddingHorizontal: 14, paddingVertical: 6 },
   line: { marginBottom: 7 },
@@ -414,7 +402,8 @@ const styles = StyleSheet.create({
   from: { color: T.textDim, fontWeight: '700' },
   system: { color: T.textDim, fontSize: 12, fontStyle: 'italic' },
 
-  caption: { position: 'absolute', left: 14, right: 78, bottom: 22 },
+  // Clear of VideoStage's mute and camera buttons, which sit at bottom 12.
+  caption: { position: 'absolute', left: 14, right: 78, bottom: 60 },
   handle: { color: T.text, fontSize: 16, fontWeight: '800' },
   captionText: { color: T.text, fontSize: 13, marginTop: 5, lineHeight: 18 },
   ticker: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 7 },

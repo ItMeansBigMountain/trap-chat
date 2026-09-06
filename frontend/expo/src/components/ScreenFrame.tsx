@@ -1,13 +1,10 @@
 // Trap Chat — Screen Frame
-// TikTok is not one responsive design, it is two, and this renders both:
+// One nav structure, rendered two ways: a fixed left sidebar on the web, and
+// the same list behind a hamburger on a phone.
 //
-//   wide   a fixed left sidebar carrying the whole nav, the room panel and
-//          the footer links, with the page centred beside it
-//   narrow a full-bleed page under a bottom tab bar, with the room panel
-//          behind a hamburger because a phone has nowhere else to put it
-//
-// The room panel is the one thing TikTok has no equivalent for, so it keeps
-// the drawer on a phone and lives inline in the sidebar on the web.
+// Social is a group you open to reach Random and Browse, rather than five flat
+// destinations. Those two are the same activity picked two ways, and burying
+// them together says so; Competitive and Leaderboards are not.
 
 import React, { useEffect, useRef, useState } from 'react';
 import {
@@ -21,20 +18,12 @@ import {
 } from 'react-native';
 import { useApp } from '../context/AppContext';
 import { useLayout } from '../hooks/useLayout';
-import { Icon, IconName, Wordmark } from './Icon';
+import { Wordmark } from './Icon';
 import { T } from '../theme';
 
 const DRAWER_WIDTH = 310;
 
-export type PageName = 'For You' | 'Browse' | 'Competitive' | 'Leaderboards' | 'Profile';
-
-const NAV: { page: PageName; icon: IconName }[] = [
-  { page: 'For You', icon: 'home' },
-  { page: 'Browse', icon: 'compass' },
-  { page: 'Competitive', icon: 'trophy' },
-  { page: 'Leaderboards', icon: 'chart' },
-  { page: 'Profile', icon: 'user' },
-];
+export type PageName = 'Random' | 'Browse' | 'Competitive' | 'Leaderboards' | 'Profile';
 
 export function ScreenFrame({
   title,
@@ -50,6 +39,7 @@ export function ScreenFrame({
   const { isWide } = useLayout();
   const { state, setSocialMode, leaveMatch } = useApp();
   const [open, setOpen] = useState(false);
+  const [socialOpen, setSocialOpen] = useState(true);
   const slide = useRef(new Animated.Value(-DRAWER_WIDTH)).current;
 
   useEffect(() => {
@@ -78,6 +68,64 @@ export function ScreenFrame({
     onNavigate(page);
   };
 
+  // The nav itself, identical in both layouts.
+  const nav = (
+    <>
+      <TouchableOpacity style={styles.group} onPress={() => setSocialOpen((v) => !v)}>
+        <Text style={styles.groupIcon}>💬</Text>
+        <Text style={styles.groupText}>Social</Text>
+        <Text style={styles.chevron}>{socialOpen ? '▾' : '▸'}</Text>
+      </TouchableOpacity>
+
+      {socialOpen && (
+        <View style={styles.sub}>
+          <TouchableOpacity
+            style={[styles.link, active === 'Random' && styles.linkActive]}
+            onPress={() => go('Random')}
+            accessibilityLabel="Random"
+          >
+            <Text style={[styles.linkText, active === 'Random' && styles.linkTextActive]}>
+              Random
+            </Text>
+            <Text style={styles.linkBlurb}>Swipe for the next person</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.link, active === 'Browse' && styles.linkActive]}
+            onPress={() => go('Browse')}
+            accessibilityLabel="Browse"
+          >
+            <Text style={[styles.linkText, active === 'Browse' && styles.linkTextActive]}>
+              Browse
+            </Text>
+            <Text style={styles.linkBlurb}>All open rooms, or join by code</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      <TouchableOpacity
+        style={[styles.group, active === 'Competitive' && styles.linkActive]}
+        onPress={() => go('Competitive')}
+        accessibilityLabel="Competitive"
+      >
+        <Text style={styles.groupIcon}>🏆</Text>
+        <Text style={[styles.groupText, active === 'Competitive' && styles.linkTextActive]}>
+          Competitive
+        </Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={[styles.group, active === 'Leaderboards' && styles.linkActive]}
+        onPress={() => go('Leaderboards')}
+        accessibilityLabel="Leaderboards"
+      >
+        <Text style={styles.groupIcon}>📊</Text>
+        <Text style={[styles.groupText, active === 'Leaderboards' && styles.linkTextActive]}>
+          Leaderboards
+        </Text>
+      </TouchableOpacity>
+    </>
+  );
+
   const roomPanel = (
     <RoomPanel
       state={state}
@@ -89,60 +137,66 @@ export function ScreenFrame({
     />
   );
 
+  const profileRow = (
+    <TouchableOpacity
+      style={[styles.group, active === 'Profile' && styles.linkActive]}
+      onPress={() => go('Profile')}
+      accessibilityLabel="Profile"
+    >
+      <Text style={styles.groupIcon}>⚙️</Text>
+      <Text style={[styles.groupText, active === 'Profile' && styles.linkTextActive]}>
+        Profile & settings
+      </Text>
+    </TouchableOpacity>
+  );
+
   // ---------- WIDE: SIDEBAR BESIDE THE PAGE ----------
   if (isWide) {
     return (
       <View style={styles.wideRoot}>
-        <ScrollView
-          style={styles.sidebar}
-          contentContainerStyle={styles.sidebarInner}
-          showsVerticalScrollIndicator={false}
-        >
-          <View style={styles.sidebarBrand}>
-            <Wordmark size={25} />
-          </View>
-
-          {who ? (
-            <View style={styles.sidebarWho}>
-              <View style={styles.sidebarAvatar}>
-                <Text style={styles.sidebarAvatarText}>{who.charAt(0).toUpperCase()}</Text>
-              </View>
-              <Text style={styles.sidebarWhoText} numberOfLines={1}>
-                {who}
-              </Text>
+        <View style={styles.sidebar}>
+          <ScrollView
+            contentContainerStyle={styles.sidebarInner}
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.sidebarBrand}>
+              <Wordmark size={25} />
             </View>
-          ) : null}
 
-          {NAV.map(({ page, icon }) => (
-            <TouchableOpacity
-              key={page}
-              style={styles.navRow}
-              onPress={() => go(page)}
-              accessibilityLabel={page}
-            >
-              <Icon name={icon} size={26} color={active === page ? T.accent : T.text} />
-              <Text style={[styles.navText, active === page && styles.navTextActive]}>{page}</Text>
-            </TouchableOpacity>
-          ))}
+            {who ? (
+              <View style={styles.sidebarWho}>
+                <View style={styles.sidebarAvatar}>
+                  <Text style={styles.sidebarAvatarText}>{who.charAt(0).toUpperCase()}</Text>
+                </View>
+                <Text style={styles.sidebarWhoText} numberOfLines={1}>
+                  {who}
+                </Text>
+              </View>
+            ) : null}
 
-          <View style={styles.sidebarPanel}>{roomPanel}</View>
+            {nav}
 
-          <View style={styles.sidebarFooter}>
-            <Text style={styles.footerLink}>Trap Chat</Text>
-            <Text style={styles.footerLink}>Terms & Privacy</Text>
-            <Text style={styles.footerCopy}>© 2026 Trap Chat</Text>
-          </View>
-        </ScrollView>
+            <View style={styles.sidebarPanel}>{roomPanel}</View>
+
+            <View style={styles.sidebarFooter}>
+              <Text style={styles.footerLink}>Trap Chat</Text>
+              <Text style={styles.footerLink}>Terms & Privacy</Text>
+              <Text style={styles.footerCopy}>© 2026 Trap Chat</Text>
+            </View>
+          </ScrollView>
+
+          <View style={styles.sidebarBottom}>{profileRow}</View>
+        </View>
 
         <View style={styles.wideBody}>{children}</View>
       </View>
     );
   }
 
-  // ---------- NARROW: FULL BLEED UNDER A TAB BAR ----------
+  // ---------- NARROW: HAMBURGER AND DRAWER ----------
   return (
     <View style={styles.root}>
-      <View style={styles.topBar} pointerEvents="box-none">
+      <View style={styles.topBar}>
         <TouchableOpacity
           onPress={() => setOpen(true)}
           style={styles.burger}
@@ -163,20 +217,6 @@ export function ScreenFrame({
 
       <View style={styles.body}>{children}</View>
 
-      <View style={styles.tabBar}>
-        {NAV.map(({ page, icon }) => (
-          <TouchableOpacity
-            key={page}
-            style={styles.tab}
-            onPress={() => go(page)}
-            accessibilityLabel={page}
-          >
-            <Icon name={icon} size={22} color={active === page ? T.text : T.textDim} />
-            <Text style={[styles.tabText, active === page && styles.tabTextActive]}>{page}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
       {open && (
         <Pressable
           accessibilityLabel="Close menu"
@@ -193,14 +233,15 @@ export function ScreenFrame({
           <Wordmark size={23} />
           {who ? <Text style={styles.drawerWho}>{who}</Text> : null}
           {roomPanel}
+          <View style={styles.drawerNav}>{nav}</View>
         </ScrollView>
+        <View style={styles.drawerFooter}>{profileRow}</View>
       </Animated.View>
     </View>
   );
 }
 
 // Shared by both layouts: where you are, what you want next, and the way out.
-// It has to read the same in a sidebar and in a drawer.
 function RoomPanel({
   state,
   setSocialMode,
@@ -225,7 +266,7 @@ function RoomPanel({
       ) : (
         <View style={styles.nowCard}>
           <Text style={styles.nowLabel}>NOT IN A ROOM</Text>
-          <Text style={styles.nowIdle}>Pick For You or Browse.</Text>
+          <Text style={styles.nowIdle}>Pick Random or Browse.</Text>
         </View>
       )}
 
@@ -267,7 +308,7 @@ const styles = StyleSheet.create({
     borderRightColor: T.border,
     backgroundColor: T.bg,
   },
-  sidebarInner: { paddingHorizontal: 14, paddingTop: 18, paddingBottom: 28 },
+  sidebarInner: { paddingHorizontal: 14, paddingTop: 18, paddingBottom: 20 },
   sidebarBrand: { paddingHorizontal: 6, marginBottom: 18 },
   sidebarWho: {
     flexDirection: 'row',
@@ -286,16 +327,6 @@ const styles = StyleSheet.create({
   },
   sidebarAvatarText: { color: T.text, fontWeight: '800', fontSize: 13 },
   sidebarWhoText: { color: T.text, fontWeight: '600', fontSize: 14, flex: 1 },
-  navRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    paddingVertical: 11,
-    paddingHorizontal: 6,
-    borderRadius: T.radius,
-  },
-  navText: { color: T.text, fontSize: 17, fontWeight: '700' },
-  navTextActive: { color: T.accent },
   sidebarPanel: { marginTop: 18, borderTopWidth: 1, borderTopColor: T.border, paddingTop: 16 },
   sidebarFooter: {
     marginTop: 22,
@@ -303,6 +334,12 @@ const styles = StyleSheet.create({
     borderTopColor: T.border,
     paddingTop: 14,
     gap: 6,
+  },
+  sidebarBottom: {
+    borderTopWidth: 1,
+    borderTopColor: T.border,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
   },
   footerLink: { color: T.textDim, fontSize: 12, fontWeight: '600' },
   footerCopy: { color: T.textFaint, fontSize: 11, marginTop: 4 },
@@ -315,11 +352,7 @@ const styles = StyleSheet.create({
     paddingTop: 44,
     paddingBottom: 8,
     paddingHorizontal: 12,
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 5,
+    backgroundColor: T.bg,
   },
   burger: { width: 30, height: 22, justifyContent: 'space-between', paddingVertical: 3 },
   burgerBar: { height: 2, borderRadius: 2, backgroundColor: T.text },
@@ -327,17 +360,6 @@ const styles = StyleSheet.create({
   topTitle: { color: T.text, fontSize: 16, fontWeight: '700' },
   topWho: { color: T.textDim, fontSize: 11, marginTop: 1 },
   body: { flex: 1 },
-  tabBar: {
-    flexDirection: 'row',
-    height: T.tabBarHeight,
-    paddingBottom: 4,
-    borderTopWidth: 1,
-    borderTopColor: T.border,
-    backgroundColor: T.bg,
-  },
-  tab: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 2 },
-  tabText: { color: T.textDim, fontSize: 9, fontWeight: '600' },
-  tabTextActive: { color: T.text },
 
   backdrop: {
     position: 'absolute',
@@ -362,6 +384,34 @@ const styles = StyleSheet.create({
   },
   drawerScroll: { paddingHorizontal: 18, paddingBottom: 20 },
   drawerWho: { color: T.textDim, fontSize: 13, marginTop: 6, fontWeight: '600' },
+  drawerNav: { marginTop: 14, borderTopWidth: 1, borderTopColor: T.border, paddingTop: 10 },
+  drawerFooter: {
+    borderTopWidth: 1,
+    borderTopColor: T.border,
+    paddingHorizontal: 18,
+    paddingTop: 8,
+    paddingBottom: 26,
+  },
+
+  // NAV
+  group: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 13,
+    paddingHorizontal: 12,
+    borderRadius: T.radius,
+    marginTop: 4,
+  },
+  groupIcon: { fontSize: 18 },
+  groupText: { color: T.text, fontSize: 16, fontWeight: '700', flex: 1 },
+  chevron: { color: T.textDim, fontSize: 13 },
+  sub: { paddingLeft: 14 },
+  link: { paddingVertical: 11, paddingHorizontal: 12, borderRadius: T.radius },
+  linkActive: { backgroundColor: T.surfaceHi },
+  linkText: { color: T.text, fontSize: 15, fontWeight: '600' },
+  linkTextActive: { color: T.accent },
+  linkBlurb: { color: T.textDim, fontSize: 11, marginTop: 2 },
 
   // ROOM PANEL
   nowCard: {
