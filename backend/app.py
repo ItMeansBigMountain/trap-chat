@@ -1,11 +1,13 @@
 import os
 import json
+import threading
 import time
 import uuid
 import re
 from datetime import datetime, timedelta
 from functools import wraps
 
+from sqlalchemy import and_, or_
 from sqlalchemy.exc import OperationalError
 
 from flask import Flask, request, jsonify, render_template, send_from_directory
@@ -28,6 +30,13 @@ EMPTY_ROOM_TIMEOUT_SECONDS = 60
 
 # Rating every player starts at, and what a guest counts as when pairing.
 DEFAULT_RATING = 1000
+
+# Matchmaking reads the queue and then writes to it, so two callers arriving
+# together could both find it empty and both create a match, leaving each
+# alone. This serialises that section. It holds for this deployment because the
+# backend is one replica running one worker; moving to several processes means
+# moving this guarantee into the database with SELECT ... FOR UPDATE.
+MATCHMAKING_LOCK = threading.Lock()
 
 SOCIAL = 'social'
 COMPETITIVE = 'competitive'
@@ -316,8 +325,35 @@ def purge_abandoned_rooms():
     db.session.commit()
 
 
+def present_players(match):
+    """Players actually in the match. Someone who left still has a row, and
+    counting them made a room with a ghost look full."""
+    return [p for p in match.players if p.left_at is None]
+
+
 def match_player_count(match):
-    return MatchPlayer.query.filter_by(match_id=match.id).count()
+    return len(present_players(match))
+
+
+def start_if_ready(match, game):
+    """Start a match the moment it has a full complement.
+
+    Every path that can add a player ends here, including the one that hands
+    back a match you were already in. Skipping this check on that path left
+    complete matches sitting on 'waiting', so both players watched a spinner
+    while the room quietly had two people in it.
+    """
+    if match.status != 'waiting' or len(present_players(match)) < 2:
+        return False
+    match.status = 'active'
+    match.started_at = datetime.utcnow()
+    db.session.commit()
+    socketio.emit(
+        'match_start',
+        {'match_id': match.id, 'room_code': match.room_code, 'game': game.slug},
+        to=f'match_{match.id}',
+    )
+    return True
 
 
 def gen_room_code():
@@ -629,83 +665,101 @@ def api_quick_match():
     # forever. Handing that to the next player puts them in a room with a ghost
     # that can never arrive, so only consider recently queued matches.
     fresh_cutoff = datetime.utcnow() - timedelta(minutes=QUEUE_TIMEOUT_MINUTES)
-    existing = (
-        Match.query.join(MatchPlayer)
-        .filter(
-            Match.game_id == game.id,
-            Match.status == 'waiting',
-            Match.created_at >= fresh_cutoff,
-            identity_filter,
+
+    with MATCHMAKING_LOCK:
+        # A match you are already in wins, whether it is still filling or has
+        # already started. Returning a started match matters: a client that
+        # missed the match_start broadcast recovers just by asking again.
+        existing = (
+            Match.query.join(MatchPlayer)
+            .filter(
+                identity_filter,
+                Match.game_id == game.id,
+                or_(
+                    and_(Match.status == 'waiting', Match.created_at >= fresh_cutoff),
+                    Match.status == 'active',
+                ),
+            )
+            .order_by(Match.id.desc())
+            .first()
         )
-        .first()
-    )
-    if existing:
-        return jsonify({
-            'match_id': existing.id,
-            'room_code': existing.room_code,
-            'game': game.slug,
-            'status': existing.status,
-            'players': [{'display_name': p.display_name} for p in existing.players],
-        })
 
-    # Find a waiting match the caller has not already joined, or create one.
-    candidates = Match.query.filter_by(game_id=game.id, status='waiting').filter(
-        Match.created_at >= fresh_cutoff,
-        ~Match.players.any(identity_filter),
-    ).all()
-    # Competitive pairing feeds the ladder, so prefer an opponent near your
-    # rating rather than whoever queued first. Guests have no rating, so they
-    # sit at the default and pair with each other naturally.
-    waiting = None
-    if candidates:
-        if game.category == COMPETITIVE:
-            my_rating = request.user.rating if request.user else DEFAULT_RATING
-
-            def rating_gap(candidate):
-                ratings = [
-                    p.user.rating for p in candidate.players
-                    if p.user is not None and p.user.rating is not None
-                ]
-                opponent = sum(ratings) / len(ratings) if ratings else DEFAULT_RATING
-                return abs(opponent - my_rating)
-
-            waiting = min(candidates, key=rating_gap)
+        if existing is not None:
+            match = existing
+            # Someone returning after a disconnect is present again.
+            for player in match.players:
+                is_me = (
+                    player.user_id == request.user.id if request.user
+                    else player.guest_session_id == guest_session
+                )
+                if is_me and player.left_at is not None:
+                    player.left_at = None
+            db.session.commit()
         else:
-            waiting = candidates[0]
-    if waiting:
-        match = waiting
-    else:
-        match = Match(game_id=game.id, room_code=gen_room_code(), host_user_id=request.user.id if request.user else None, status='waiting')
-        db.session.add(match)
-        db.session.flush()
+            candidates = Match.query.filter_by(game_id=game.id, status='waiting').filter(
+                Match.created_at >= fresh_cutoff,
+                ~Match.players.any(identity_filter),
+            ).all()
+            # Only rooms with space, and never one everybody already left.
+            candidates = [c for c in candidates if 0 < len(present_players(c)) < game.max_players]
 
-    display = request.user.username if request.user else guest_display_name(guest_session or 'anon')
-    db.session.add(MatchPlayer(
-        match_id=match.id,
-        user_id=request.user.id if request.user else None,
-        guest_session_id=guest_session if not request.user else None,
-        display_name=display,
-    ))
-    db.session.flush()
+            # Competitive pairing feeds the ladder, so prefer an opponent near
+            # your rating rather than whoever queued first. Guests have no
+            # rating, so they sit at the default and pair with each other.
+            waiting = None
+            if candidates:
+                if game.category == COMPETITIVE:
+                    my_rating = request.user.rating if request.user else DEFAULT_RATING
 
-    # If 2 players, start.
-    if match_player_count(match) >= 2:
-        match.status = 'active'
-        match.started_at = datetime.utcnow()
-        db.session.commit()
-        socketio.emit('match_start', {'match_id': match.id, 'room_code': match.room_code, 'game': game.slug}, to=f'match_{match.id}')
-    else:
-        db.session.commit()
+                    def rating_gap(candidate):
+                        ratings = [
+                            p.user.rating for p in present_players(candidate)
+                            if p.user is not None and p.user.rating is not None
+                        ]
+                        opponent = sum(ratings) / len(ratings) if ratings else DEFAULT_RATING
+                        return abs(opponent - my_rating)
 
-    players = MatchPlayer.query.filter_by(match_id=match.id).all()
-    return jsonify({'match_id': match.id, 'room_code': match.room_code, 'game': game.slug, 'status': match.status, 'players': [{'display_name': p.display_name} for p in players]})
+                    waiting = min(candidates, key=rating_gap)
+                else:
+                    waiting = candidates[0]
+
+            if waiting is not None:
+                match = waiting
+            else:
+                match = Match(
+                    game_id=game.id,
+                    room_code=gen_room_code(),
+                    host_user_id=request.user.id if request.user else None,
+                    status='waiting',
+                )
+                db.session.add(match)
+                db.session.flush()
+
+            db.session.add(MatchPlayer(
+                match_id=match.id,
+                user_id=request.user.id if request.user else None,
+                guest_session_id=guest_session if not request.user else None,
+                display_name=request.user.username if request.user else guest_display_name(guest_session or 'anon'),
+            ))
+            db.session.commit()
+
+        # Both paths end here, so a complete match always starts.
+        start_if_ready(match, game)
+
+    return jsonify({
+        'match_id': match.id,
+        'room_code': match.room_code,
+        'game': game.slug,
+        'status': match.status,
+        'players': [{'display_name': p.display_name} for p in present_players(match)],
+    })
 
 
 def room_occupants(room):
     match = Match.query.filter_by(room_code=room.code).first()
     if match is None:
         return []
-    return [p for p in match.players if p.left_at is None]
+    return present_players(match)
 
 
 @app.route('/api/rooms', methods=['GET'])

@@ -87,3 +87,101 @@ def test_quick_match_ignores_a_stale_waiting_match(tmp_path):
     body = second.get_json()
     assert body["match_id"] != stale_match_id, "joined an abandoned queue instead of starting a fresh one"
     assert body["status"] == "waiting"
+
+
+def test_a_guest_and_an_account_pair_with_each_other(tmp_path):
+    """The two tabs people actually test with: one signed in, one guest."""
+    import importlib
+    import os
+
+    os.environ["DATABASE_URL"] = f"sqlite:///{tmp_path / 'trapchat.db'}"
+    os.environ["SECRET_KEY"] = "test-secret"
+    module = importlib.import_module("app")
+    app = module.app
+
+    guest = app.test_client()
+    assert guest.post("/api/auth/guest").status_code == 200
+
+    account = app.test_client()
+    assert account.post(
+        "/api/auth/register", json={"username": "pair_acct", "password": "Str0ng-Pass!1"}
+    ).status_code == 200
+
+    first = guest.post("/api/matches/quick", json={"game_slug": "pushups"}).get_json()
+    second = account.post("/api/matches/quick", json={"game_slug": "pushups"}).get_json()
+
+    assert first["match_id"] == second["match_id"], "queued separately instead of pairing"
+    assert second["status"] == "active"
+
+
+def test_requeueing_activates_a_match_that_already_has_two_players(tmp_path):
+    """Re-queueing returns the match you are already in. If the pair is
+    complete by then, that path still has to start the match, otherwise both
+    players sit on 'searching' forever while the room quietly has two people
+    in it."""
+    import importlib
+    import os
+
+    os.environ["DATABASE_URL"] = f"sqlite:///{tmp_path / 'trapchat.db'}"
+    os.environ["SECRET_KEY"] = "test-secret"
+    module = importlib.import_module("app")
+    app = module.app
+
+    one = app.test_client()
+    one.post("/api/auth/guest")
+    two = app.test_client()
+    two.post("/api/auth/guest")
+
+    queued = one.post("/api/matches/quick", json={"game_slug": "pushups"}).get_json()
+    match_id = queued["match_id"]
+
+    # Second player joins the same match, but leave it marked waiting to stand
+    # in for any path that added a player without starting the match.
+    two.post("/api/matches/quick", json={"game_slug": "pushups"})
+    with app.app_context():
+        match = module.db.session.get(module.Match, match_id)
+        match.status = "waiting"
+        module.db.session.commit()
+
+    again = one.post("/api/matches/quick", json={"game_slug": "pushups"}).get_json()
+
+    assert again["match_id"] == match_id
+    assert again["status"] == "active", "a full match was handed back still waiting"
+
+
+def test_simultaneous_queuers_do_not_each_create_their_own_match(tmp_path):
+    """Two people hitting the queue at the same instant must meet, not both
+    read an empty queue and both open a match nobody else can see."""
+    import importlib
+    import os
+    import threading
+
+    os.environ["DATABASE_URL"] = f"sqlite:///{tmp_path / 'trapchat.db'}"
+    os.environ["SECRET_KEY"] = "test-secret"
+    module = importlib.import_module("app")
+    app = module.app
+
+    clients = []
+    for _ in range(2):
+        client = app.test_client()
+        client.post("/api/auth/guest")
+        clients.append(client)
+
+    results = {}
+    barrier = threading.Barrier(len(clients))
+
+    def queue(index):
+        barrier.wait()  # line them up so they really do collide
+        results[index] = clients[index].post(
+            "/api/matches/quick", json={"game_slug": "pushups"}
+        ).get_json()
+
+    threads = [threading.Thread(target=queue, args=(i,)) for i in range(len(clients))]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    ids = {r["match_id"] for r in results.values()}
+    assert len(ids) == 1, f"queued into separate matches: {ids}"
+    assert any(r["status"] == "active" for r in results.values())
