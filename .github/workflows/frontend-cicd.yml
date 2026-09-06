@@ -162,6 +162,9 @@ jobs:
       #     minimum-approvals: 1
       #     issue-title: "Approve the frontend deploy for ${{ github.sha }}"
 
+      # FETCH THE TEST SCRIPTS
+      - uses: actions/checkout@v4
+
       # SHIP EXACTLY WHAT WAS BUILT
       - uses: actions/download-artifact@v4
         with:

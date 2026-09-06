@@ -105,6 +105,9 @@ jobs:
       #     minimum-approvals: 1
       #     issue-title: "Approve the backend deploy for ${{ github.sha }}"
 
+      # FETCH THE TEST SCRIPTS
+      - uses: actions/checkout@v4
+
       # SIGN IN TO AZURE
       - name: Azure login
         uses: azure/login@v2
