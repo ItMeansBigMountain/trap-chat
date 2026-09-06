@@ -98,8 +98,6 @@ jobs:
         run: terraform validate
       - name: Terraform plan
         run: terraform plan -var-file=env/prod.tfvars -out=tfplan
-      # Render the plan into the run summary so the approving reviewer can see
-      # exactly what apply would do (especially any destroys) before approving.
       - name: Publish plan to run summary
         run: |
           {
@@ -118,7 +116,6 @@ jobs:
   apply:
     name: Apply (requires approval)
     needs: plan
-    # Never apply from a pull request; PRs get plan-only feedback.
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -158,10 +155,6 @@ jobs:
             esac
           done
           echo "::warning::Container App still provisioning after 10 minutes; attempting apply anyway"
-
-      # Applies the exact plan file that was reviewed and approved. If state
-      # moved since the plan was taken, Terraform refuses the stale plan
-      # rather than applying something unreviewed.
       - name: Terraform apply
         run: terraform apply -auto-approve tfplan
       - name: Publish endpoints to run summary

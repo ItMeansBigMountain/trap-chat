@@ -68,8 +68,6 @@ jobs:
         working-directory: frontend/expo
         run: npx tsc --noEmit
 
-      # A pull request never deploys, so the bundle only has to compile. Use a
-      # placeholder host that is obviously not a real backend.
       - name: Build (pull request check only)
         if: github.event_name == 'pull_request'
         working-directory: frontend/expo
@@ -84,8 +82,6 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      # Read the backend hostname from Azure itself so the published bundle
-      # can never contain a guessed, stale or hand-typed URL.
       - name: Resolve verified backend URL
         if: github.event_name != 'pull_request'
         id: backend_url
@@ -106,9 +102,7 @@ jobs:
           EXPO_PUBLIC_API_URL: ${{ steps.backend_url.outputs.url }}
           EXPO_PUBLIC_SOCKET_URL: ${{ steps.backend_url.outputs.url }}
 
-      # Hand the exact built bundle to the deploy stage, so approving publishes
-      # what was built rather than rebuilding something new.
-      - name: Upload web bundle
+      - name: Upload web bundle Artifact
         if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
