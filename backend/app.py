@@ -1013,6 +1013,11 @@ def api_join_room(code):
         ))
         db.session.commit()
 
+    # Joining is itself being in the room. Without this the reaper saw a room
+    # no socket had ever been in and deleted it out from under the person who
+    # had just made it, so a shared code died before anyone could use it.
+    touch_match_presence(match.id)
+
     return jsonify({
         'match_id': match.id,
         'room_code': room.code,

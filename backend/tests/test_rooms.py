@@ -126,3 +126,25 @@ def test_a_room_someone_is_still_connected_to_survives(tmp_path):
         assert code in browsable(host), "a room with someone still in it was deleted"
     finally:
         module.SOCKET_IDENTITIES.pop("a-silent-socket", None)
+
+
+def test_a_room_just_created_survives_on_a_long_running_server(tmp_path):
+    """The reaper must not delete a room out from under the person who just
+    made it. Every earlier test started a fresh process, where nothing is old
+    enough to be swept, so this hole only showed up against production."""
+    import importlib, os
+    from datetime import datetime, timedelta
+
+    os.environ["DATABASE_URL"] = f"sqlite:///{tmp_path / 'trapchat.db'}"
+    os.environ["SECRET_KEY"] = "test-secret"
+    module = importlib.import_module("app")
+    # A server that has been up far longer than the room timeout.
+    module.PROCESS_STARTED_AT = datetime.utcnow() - timedelta(
+        seconds=module.EMPTY_ROOM_TIMEOUT_SECONDS * 10
+    )
+
+    host, code, _ = abandoned_room(module)
+
+    assert code in browsable(host), (
+        "a freshly created room was reaped before anyone could open a socket"
+    )
