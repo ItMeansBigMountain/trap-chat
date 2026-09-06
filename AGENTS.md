@@ -286,6 +286,27 @@ platform settles that the same way, and so does this one:
   `e2e/flow_scorer.py` can feed it synthetic onsets rather than trying to rap
   into a headless Chrome.
 
+## Brand: two modes, two colours
+
+The layout is borrowed from the grammar of vertical video, which nobody owns.
+The colour is not borrowed:
+
+- **Social is violet `#7B5CFF`, Competitive is acid lime `#CCFF00`.** The whole
+  app changes temperature with the mode, so you can tell which world you are in
+  from across the room before reading a word. TikTok has one mode and no
+  equivalent, which is the point: this is the brand doing work.
+- **Ink is part of the accent, not a constant.** White type on lime is
+  unreadable, so `ACCENT_INK` says what to print on each. Any new button with
+  an accent background must use it.
+- **Errors are never the accent.** On Competitive the accent is a bright lime,
+  which reads as success; `T.danger` exists for anything that went wrong.
+- **The mode follows the page, not the match** -- except a competitive match,
+  which takes the screen over and therefore decides the colour. A social match
+  renders inside its page, so reading the leaderboard from a chat is still lime.
+- The wordmark is `Trap` in lime and `Chat` in violet, so the logo states what
+  the product is. It previously used TikTok's offset chromatic split, which was
+  the single most derivative thing in the app.
+
 ## Testing
 
 Unit tests and both smoke suites run before anything ships, and the suites

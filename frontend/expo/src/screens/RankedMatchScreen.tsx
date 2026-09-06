@@ -156,7 +156,7 @@ export function RankedMatchScreen() {
         <Camera stream={localStream} onReady={attachTracker} />
         {tracker === 'loading' && (
           <View style={styles.overlay}>
-            <ActivityIndicator color="#FE2C55" />
+            <ActivityIndicator color="#CCFF00" />
             <Text style={styles.overlayText}>Loading the rep counter…</Text>
           </View>
         )}
@@ -195,8 +195,8 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', width: '100%', maxWidth: 460, marginBottom: 12 },
   game: { color: '#fff', fontSize: 21, fontWeight: '800' },
   sub: { color: '#a1a1a1', fontSize: 12, marginTop: 2 },
-  clock: { color: '#FE2C55', fontSize: 26, fontWeight: '900' },
-  clockLow: { color: '#FE2C55' },
+  clock: { color: '#CCFF00', fontSize: 26, fontWeight: '900' },
+  clockLow: { color: '#CCFF00' },
   scores: { flexDirection: 'row', gap: 12, width: '100%', maxWidth: 460, marginBottom: 12 },
   scoreBox: { flex: 1, backgroundColor: '#121212', borderRadius: 8, paddingVertical: 12, alignItems: 'center' },
   scoreLabel: { color: '#a1a1a1', fontSize: 10, letterSpacing: 1.4, fontWeight: '700' },
@@ -205,12 +205,12 @@ const styles = StyleSheet.create({
   overlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', gap: 10, paddingHorizontal: 24 },
   overlayText: { color: '#a1a1a1', fontSize: 13, textAlign: 'center' },
   stageBadge: { position: 'absolute', left: 12, bottom: 12, paddingHorizontal: 14, paddingVertical: 7, borderRadius: 999, backgroundColor: 'rgba(17,20,28,0.85)' },
-  stageText: { color: '#FE2C55', fontWeight: '900', fontSize: 12, letterSpacing: 1.5 },
+  stageText: { color: '#CCFF00', fontWeight: '900', fontSize: 12, letterSpacing: 1.5 },
   hint: { color: '#f59e0b', fontSize: 12, marginTop: 10, textAlign: 'center' },
   done: { width: '100%', maxWidth: 460, marginTop: 14, alignItems: 'center' },
   doneText: { color: '#fff', fontWeight: '700', marginBottom: 12, textAlign: 'center' },
-  leave: { backgroundColor: '#FE2C55', borderRadius: 8, paddingVertical: 15, paddingHorizontal: 40 },
-  leaveText: { color: '#fff', fontWeight: '800' },
+  leave: { backgroundColor: '#CCFF00', borderRadius: 8, paddingVertical: 15, paddingHorizontal: 40 },
+  leaveText: { color: '#000', fontWeight: '800' },
   forfeit: { width: '100%', maxWidth: 460, marginTop: 14, backgroundColor: '#1f1f1f', borderRadius: 8, paddingVertical: 15, alignItems: 'center' },
-  forfeitText: { color: '#FE2C55', fontWeight: '800' },
+  forfeitText: { color: '#CCFF00', fontWeight: '800' },
 });

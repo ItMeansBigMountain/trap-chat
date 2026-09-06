@@ -122,7 +122,7 @@ export function BrowseScreen({ onEntered }: { onEntered?: () => void }) {
       </View>
 
       {loading ? (
-        <ActivityIndicator color="#FE2C55" style={{ marginTop: 16 }} />
+        <ActivityIndicator color="#7B5CFF" style={{ marginTop: 16 }} />
       ) : rooms.length === 0 ? (
         <Text style={styles.empty}>Nothing open right now. Start one above.</Text>
       ) : (
@@ -158,21 +158,21 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', gap: 10 },
   input: { flex: 1, backgroundColor: '#121212', color: '#fff', borderRadius: 8, paddingHorizontal: 14, paddingVertical: 12 },
   fullInput: { flex: 0 },
-  primary: { backgroundColor: '#FE2C55', borderRadius: 8, paddingHorizontal: 22, justifyContent: 'center' },
-  primaryWide: { backgroundColor: '#FE2C55', borderRadius: 8, paddingVertical: 14, alignItems: 'center', marginTop: 10 },
+  primary: { backgroundColor: '#7B5CFF', borderRadius: 8, paddingHorizontal: 22, justifyContent: 'center' },
+  primaryWide: { backgroundColor: '#7B5CFF', borderRadius: 8, paddingVertical: 14, alignItems: 'center', marginTop: 10 },
   primaryText: { color: '#fff', fontWeight: '800' },
   disabled: { opacity: 0.45 },
   modeRow: { flexDirection: 'row', gap: 8, marginTop: 10 },
   mode: { paddingHorizontal: 16, paddingVertical: 9, borderRadius: 999, backgroundColor: '#121212' },
-  modeActive: { backgroundColor: '#FE2C55' },
+  modeActive: { backgroundColor: '#7B5CFF' },
   modeText: { color: '#a1a1a1', fontWeight: '700', fontSize: 13 },
   modeTextActive: { color: '#fff' },
   openHeader: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' },
-  refresh: { color: '#FE2C55', fontWeight: '700', marginTop: 18, marginBottom: 9 },
+  refresh: { color: '#7B5CFF', fontWeight: '700', marginTop: 18, marginBottom: 9 },
   room: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#121212', borderRadius: 8, padding: 15, marginBottom: 9 },
   roomName: { color: '#fff', fontWeight: '700', fontSize: 15 },
   roomMeta: { color: '#a1a1a1', fontSize: 11, marginTop: 3 },
-  roomAction: { color: '#FE2C55', fontWeight: '800' },
+  roomAction: { color: '#7B5CFF', fontWeight: '800' },
   empty: { color: '#a1a1a1', fontStyle: 'italic' },
-  error: { color: '#FE2C55', marginBottom: 10 },
+  error: { color: '#FF4757', marginBottom: 10 },
 });

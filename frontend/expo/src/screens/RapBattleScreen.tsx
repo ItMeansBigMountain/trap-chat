@@ -21,6 +21,7 @@ import api, { VoteRow } from '../services/api';
 import { BEATS, Beat, FlowScorer, FlowResult } from '../services/flowScorer';
 import { BeatMachine } from '../services/beatMachine';
 import { OnsetDetector, micSupported } from '../services/onsetDetector';
+import { useAccent } from '../hooks/useAccent';
 import { T } from '../theme';
 
 const TURN_SECONDS = 60;
@@ -29,6 +30,7 @@ type Phase = 'beat' | 'ready' | 'rapping' | 'listening' | 'voting';
 
 export function RapBattleScreen() {
   const { state, leaveMatch } = useApp();
+  const { accent, ink } = useAccent();
   const match = state.currentMatch;
 
   const [phase, setPhase] = useState<Phase>('beat');
@@ -153,7 +155,7 @@ export function RapBattleScreen() {
   if (!match) {
     return (
       <View style={styles.centre}>
-        <ActivityIndicator color={T.accent} />
+        <ActivityIndicator color={accent} />
       </View>
     );
   }
@@ -170,7 +172,7 @@ export function RapBattleScreen() {
         {BEATS.map((option) => (
           <TouchableOpacity
             key={option.slug}
-            style={[styles.beatRow, beat.slug === option.slug && styles.beatRowOn]}
+            style={[styles.beatRow, beat.slug === option.slug && { borderColor: accent }]}
             onPress={() => setBeat(option)}
           >
             <Text style={styles.beatTitle}>{option.title}</Text>
@@ -178,8 +180,11 @@ export function RapBattleScreen() {
           </TouchableOpacity>
         ))}
         {error ? <Text style={styles.error}>{error}</Text> : null}
-        <TouchableOpacity style={styles.cta} onPress={() => setPhase('ready')}>
-          <Text style={styles.ctaText}>Use {beat.title}</Text>
+        <TouchableOpacity
+          style={[styles.cta, { backgroundColor: accent }]}
+          onPress={() => setPhase('ready')}
+        >
+          <Text style={[styles.ctaText, { color: ink }]}>Use {beat.title}</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.quiet} onPress={leaveMatch}>
           <Text style={styles.quietText}>Forfeit</Text>
@@ -198,8 +203,8 @@ export function RapBattleScreen() {
           shows how tight you are landing.
         </Text>
         {error ? <Text style={styles.error}>{error}</Text> : null}
-        <TouchableOpacity style={styles.cta} onPress={startTurn}>
-          <Text style={styles.ctaText}>Start my turn</Text>
+        <TouchableOpacity style={[styles.cta, { backgroundColor: accent }]} onPress={startTurn}>
+          <Text style={[styles.ctaText, { color: ink }]}>Start my turn</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.quiet} onPress={() => setPhase('beat')}>
           <Text style={styles.quietText}>Change beat</Text>
@@ -218,7 +223,7 @@ export function RapBattleScreen() {
         </Text>
 
         <View style={styles.meter}>
-          <View style={[styles.meterFill, { width: `${Math.round(tightness * 100)}%` }]} />
+          <View style={[styles.meterFill, { width: `${Math.round(tightness * 100)}%`, backgroundColor: accent }]} />
         </View>
         <Text style={styles.meterLabel}>
           {tightness > 0.75 ? 'ON BEAT' : tightness > 0.4 ? 'CLOSE' : 'OFF BEAT'}
@@ -246,7 +251,7 @@ export function RapBattleScreen() {
       {flow ? (
         <View style={styles.flowCard}>
           <Text style={styles.flowLabel}>YOUR FLOW</Text>
-          <Text style={styles.flowScore}>{flow.score}</Text>
+          <Text style={[styles.flowScore, { color: accent }]}>{flow.score}</Text>
           <Text style={styles.flowDetail}>
             {flow.onBeat}/{flow.total} syllables on the grid · {flow.bars.toFixed(1)} bars ·{' '}
             {Math.round(flow.coverage * 100)}% of the turn used
@@ -267,18 +272,18 @@ export function RapBattleScreen() {
               </Text>
             </View>
             <View style={styles.voteBar}>
-              <View style={[styles.voteFill, { width: `${share}%` }]} />
+              <View style={[styles.voteFill, { width: `${share}%`, backgroundColor: accent }]} />
             </View>
             <TouchableOpacity
               style={[
                 styles.voteButton,
-                myVote === row.player_id && styles.voteButtonOn,
+                myVote === row.player_id && { backgroundColor: accent },
                 isMe && styles.voteButtonOff,
               ]}
               disabled={isMe}
               onPress={() => vote(row.player_id)}
             >
-              <Text style={styles.voteButtonText}>
+              <Text style={[styles.voteButtonText, myVote === row.player_id && { color: ink }]}>
                 {isMe ? 'That is you' : myVote === row.player_id ? 'Your vote' : 'Vote'}
               </Text>
             </TouchableOpacity>
@@ -350,5 +355,5 @@ const styles = StyleSheet.create({
   ctaText: { color: T.text, fontWeight: '900', fontSize: 16 },
   quiet: { marginTop: 16, paddingVertical: 12, paddingHorizontal: 26, alignItems: 'center' },
   quietText: { color: T.textDim, fontWeight: '700', fontSize: 13 },
-  error: { color: T.accent, marginTop: 12, textAlign: 'center' },
+  error: { color: T.danger, marginTop: 12, textAlign: 'center' },
 });

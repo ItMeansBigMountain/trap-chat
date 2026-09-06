@@ -18,6 +18,7 @@ import {
 } from 'react-native';
 import { useApp } from '../context/AppContext';
 import { useLayout } from '../hooks/useLayout';
+import { useAccent } from '../hooks/useAccent';
 import { Wordmark } from './Icon';
 import { T } from '../theme';
 
@@ -37,6 +38,7 @@ export function ScreenFrame({
   children: React.ReactNode;
 }) {
   const { isWide } = useLayout();
+  const { accent, ink } = useAccent();
   const { state, setSocialMode, leaveMatch } = useApp();
   const [open, setOpen] = useState(false);
   const [socialOpen, setSocialOpen] = useState(true);
@@ -84,7 +86,7 @@ export function ScreenFrame({
             onPress={() => go('Random')}
             accessibilityLabel="Random"
           >
-            <Text style={[styles.linkText, active === 'Random' && styles.linkTextActive]}>
+            <Text style={[styles.linkText, active === 'Random' && { color: accent }]}>
               Random
             </Text>
             <Text style={styles.linkBlurb}>Swipe for the next person</Text>
@@ -94,7 +96,7 @@ export function ScreenFrame({
             onPress={() => go('Browse')}
             accessibilityLabel="Browse"
           >
-            <Text style={[styles.linkText, active === 'Browse' && styles.linkTextActive]}>
+            <Text style={[styles.linkText, active === 'Browse' && { color: accent }]}>
               Browse
             </Text>
             <Text style={styles.linkBlurb}>All open rooms, or join by code</Text>
@@ -108,7 +110,7 @@ export function ScreenFrame({
         accessibilityLabel="Competitive"
       >
         <Text style={styles.groupIcon}>🏆</Text>
-        <Text style={[styles.groupText, active === 'Competitive' && styles.linkTextActive]}>
+        <Text style={[styles.groupText, active === 'Competitive' && { color: accent }]}>
           Competitive
         </Text>
       </TouchableOpacity>
@@ -119,7 +121,7 @@ export function ScreenFrame({
         accessibilityLabel="Leaderboards"
       >
         <Text style={styles.groupIcon}>📊</Text>
-        <Text style={[styles.groupText, active === 'Leaderboards' && styles.linkTextActive]}>
+        <Text style={[styles.groupText, active === 'Leaderboards' && { color: accent }]}>
           Leaderboards
         </Text>
       </TouchableOpacity>
@@ -128,6 +130,8 @@ export function ScreenFrame({
 
   const roomPanel = (
     <RoomPanel
+      accent={accent}
+      ink={ink}
       state={state}
       setSocialMode={setSocialMode}
       onLeave={() => {
@@ -144,7 +148,7 @@ export function ScreenFrame({
       accessibilityLabel="Profile"
     >
       <Text style={styles.groupIcon}>⚙️</Text>
-      <Text style={[styles.groupText, active === 'Profile' && styles.linkTextActive]}>
+      <Text style={[styles.groupText, active === 'Profile' && { color: accent }]}>
         Profile & settings
       </Text>
     </TouchableOpacity>
@@ -243,10 +247,14 @@ export function ScreenFrame({
 
 // Shared by both layouts: where you are, what you want next, and the way out.
 function RoomPanel({
+  accent,
+  ink,
   state,
   setSocialMode,
   onLeave,
 }: {
+  accent: string;
+  ink: string;
   state: ReturnType<typeof useApp>['state'];
   setSocialMode: ReturnType<typeof useApp>['setSocialMode'];
   onLeave: () => void;
@@ -258,9 +266,9 @@ function RoomPanel({
         <View style={styles.nowCard}>
           <Text style={styles.nowLabel}>IN THIS ROOM</Text>
           <Text style={styles.nowName}>{match.game?.name ?? 'Room'}</Text>
-          <Text style={styles.nowCode}>#{match.room_code}</Text>
+          <Text style={[styles.nowCode, { color: accent }]}>#{match.room_code}</Text>
           <TouchableOpacity style={styles.leaveRoom} onPress={onLeave}>
-            <Text style={styles.leaveRoomText}>Leave room</Text>
+            <Text style={[styles.leaveRoomText, { color: accent }]}>Leave room</Text>
           </TouchableOpacity>
         </View>
       ) : (
@@ -280,11 +288,14 @@ function RoomPanel({
         ).map((option) => (
           <TouchableOpacity
             key={option.key}
-            style={[styles.pref, state.socialMode === option.key && styles.prefActive]}
+            style={[
+              styles.pref,
+              state.socialMode === option.key && { backgroundColor: accent, borderColor: accent },
+            ]}
             onPress={() => setSocialMode(option.key)}
           >
             <Text
-              style={[styles.prefText, state.socialMode === option.key && styles.prefTextActive]}
+              style={[styles.prefText, state.socialMode === option.key && { color: ink }]}
             >
               {option.label}
             </Text>

@@ -161,7 +161,7 @@ const styles = StyleSheet.create({
   gameName: { color: '#fff', fontSize: 22, fontWeight: '700' },
   sub: { color: '#a1a1a1', fontSize: 13, marginTop: 2 },
   leaveBtn: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8, backgroundColor: '#1f2937' },
-  leaveText: { color: '#FE2C55', fontWeight: '600' },
+  leaveText: { color: '#7B5CFF', fontWeight: '600' },
   codeBox: {
     marginHorizontal: 20,
     marginBottom: 14,
@@ -172,13 +172,13 @@ const styles = StyleSheet.create({
   },
   codeLabel: { color: '#a1a1a1', fontSize: 11, letterSpacing: 1.5, marginBottom: 4 },
   codeNote: { color: '#a1a1a1', fontSize: 11, marginTop: 8, textAlign: 'center', lineHeight: 15 },
-  code: { color: '#FE2C55', fontSize: 28, fontWeight: '800', letterSpacing: 3 },
+  code: { color: '#7B5CFF', fontSize: 28, fontWeight: '800', letterSpacing: 3 },
   chat: { flex: 1, marginHorizontal: 20 },
   chatContent: { paddingBottom: 12 },
   empty: { color: '#a1a1a1', fontStyle: 'italic', marginTop: 12 },
   line: { marginBottom: 8 },
   message: { color: '#ffffff', fontSize: 15 },
-  from: { color: '#FE2C55', fontWeight: '700' },
+  from: { color: '#7B5CFF', fontWeight: '700' },
   system: { color: '#a1a1a1', fontSize: 13, fontStyle: 'italic' },
   composer: { flexDirection: 'row', padding: 16, gap: 10, borderTopWidth: 1, borderTopColor: '#1f2937' },
   input: {
@@ -189,6 +189,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
   },
-  sendBtn: { backgroundColor: '#FE2C55', borderRadius: 10, paddingHorizontal: 20, justifyContent: 'center' },
+  sendBtn: { backgroundColor: '#7B5CFF', borderRadius: 10, paddingHorizontal: 20, justifyContent: 'center' },
   sendText: { color: '#fff', fontWeight: '700' },
 });

@@ -62,7 +62,7 @@ export function CompetitiveScreen() {
     <ScrollView style={styles.root} contentContainerStyle={styles.content}>
       {isSearching && (
         <View style={styles.queued}>
-          <ActivityIndicator color="#FE2C55" />
+          <ActivityIndicator color="#CCFF00" />
           <View style={{ flex: 1 }}>
             <Text style={styles.queuedTitle}>
               Finding an opponent near your rating · {waitedSeconds}s
@@ -126,11 +126,11 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   queuedTitle: { color: '#fff', fontWeight: '700', fontSize: 14 },
-  queuedAs: { color: '#FE2C55', fontSize: 11, fontWeight: '700', marginTop: 2 },
+  queuedAs: { color: '#CCFF00', fontSize: 11, fontWeight: '700', marginTop: 2 },
   queuedHint: { color: '#a1a1a1', fontSize: 11, marginTop: 3, lineHeight: 16 },
   cancel: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, backgroundColor: '#1f1f1f' },
-  cancelText: { color: '#FE2C55', fontWeight: '700' },
-  error: { color: '#FE2C55', marginBottom: 12 },
+  cancelText: { color: '#CCFF00', fontWeight: '700' },
+  error: { color: '#FF4757', marginBottom: 12 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   card: {
     width: '47%',

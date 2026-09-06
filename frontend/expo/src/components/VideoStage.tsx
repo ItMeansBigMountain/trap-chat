@@ -71,7 +71,7 @@ export function VideoStage({
             </>
           ) : (
             <>
-              <ActivityIndicator color="#FE2C55" />
+              <ActivityIndicator color="#7B5CFF" />
               <Text style={styles.waitText}>
                 {state === 'requesting-media'
                   ? 'Allow camera and microphone'

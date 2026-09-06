@@ -60,7 +60,7 @@ export function LeaderboardScreen() {
 
       <ScrollView style={styles.list} contentContainerStyle={styles.listContent}>
         {loading ? (
-          <ActivityIndicator color="#FE2C55" style={{ marginTop: 24 }} />
+          <ActivityIndicator color="#CCFF00" style={{ marginTop: 24 }} />
         ) : error ? (
           <Text style={styles.error}>{error}</Text>
         ) : rows.length === 0 ? (
@@ -86,9 +86,10 @@ const styles = StyleSheet.create({
   tabsWrap: { flexGrow: 0 },
   tabs: { paddingHorizontal: 16, paddingVertical: 10, gap: 8 },
   tab: { paddingHorizontal: 16, paddingVertical: 9, borderRadius: 999, backgroundColor: '#121212' },
-  tabActive: { backgroundColor: '#FE2C55' },
+  tabActive: { backgroundColor: '#CCFF00' },
   tabText: { color: '#a1a1a1', fontWeight: '700', fontSize: 13 },
-  tabTextActive: { color: '#fff' },
+  // Black on lime: white on it is unreadable.
+  tabTextActive: { color: '#000' },
   list: { flex: 1 },
   listContent: { paddingHorizontal: 18, paddingBottom: 40 },
   row: {
@@ -100,9 +101,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     marginBottom: 8,
   },
-  rank: { color: '#FE2C55', fontWeight: '900', width: 34, fontSize: 15 },
+  rank: { color: '#CCFF00', fontWeight: '900', width: 34, fontSize: 15 },
   name: { color: '#fff', flex: 1, fontWeight: '600' },
   score: { color: '#ffffff', fontWeight: '800' },
   empty: { color: '#a1a1a1', fontStyle: 'italic', marginTop: 20, lineHeight: 20 },
-  error: { color: '#FE2C55', marginTop: 20 },
+  error: { color: '#FF4757', marginTop: 20 },
 });

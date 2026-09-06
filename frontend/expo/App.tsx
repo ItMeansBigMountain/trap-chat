@@ -12,7 +12,19 @@ import { RankedMatchScreen } from './src/screens/RankedMatchScreen';
 import { RapBattleScreen } from './src/screens/RapBattleScreen';
 import { EXERCISES } from './src/services/repCounter';
 import { ScreenFrame, PageName } from './src/components/ScreenFrame';
+import { ModeProvider } from './src/hooks/useAccent';
+import { Mode } from './src/theme';
 import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
+
+// Which world each page belongs to. The accent follows this, so the app is
+// violet while you are being social and lime while you are competing.
+const PAGE_MODE: Record<PageName, Mode> = {
+  Random: 'social',
+  Browse: 'social',
+  Competitive: 'competitive',
+  Leaderboards: 'competitive',
+  Profile: 'social',
+};
 
 const TITLES: Record<PageName, string> = {
   Random: 'Random',
@@ -43,28 +55,44 @@ function AppShell() {
   // from, only played out or forfeited. Social matches stay inside their page,
   // because skipping is the whole point there.
   const match = state.currentMatch;
+  const category = match
+    ? state.games.find((g) => g.slug === match.game?.slug)?.category
+    : undefined;
+  // Only a competitive match takes the screen over, and only then does the
+  // game decide the colour. A social match renders inside its page, so while
+  // you sit in a chat and read the leaderboard the app is still the colour of
+  // the page you are looking at.
+  const mode: Mode =
+    match && category === 'competitive' ? 'competitive' : PAGE_MODE[page];
+
   if (match) {
-    const category = state.games.find((g) => g.slug === match.game?.slug)?.category;
     if (category === 'competitive') {
       // Each competitive game is scored differently, so each gets the screen
       // that can score it. Push-ups and squats are counted from the camera,
       // a rap battle is timed against a beat and then put to the room, and
       // Looks Battle still has no scoring of its own.
       const slug = match.game?.slug ?? '';
-      if (EXERCISES[slug]) return <RankedMatchScreen />;
-      if (slug === 'rapbattle') return <RapBattleScreen />;
-      return <MatchScreen />;
+      const screen = EXERCISES[slug] ? (
+        <RankedMatchScreen />
+      ) : slug === 'rapbattle' ? (
+        <RapBattleScreen />
+      ) : (
+        <MatchScreen />
+      );
+      return <ModeProvider mode={mode}>{screen}</ModeProvider>;
     }
   }
 
   return (
-    <ScreenFrame title={TITLES[page]} active={page} onNavigate={setPage}>
+    <ModeProvider mode={mode}>
+      <ScreenFrame title={TITLES[page]} active={page} onNavigate={setPage}>
       {page === 'Random' && <SocialScreen />}
       {page === 'Browse' && <BrowseScreen onEntered={() => setPage('Random')} />}
       {page === 'Competitive' && <CompetitiveScreen />}
       {page === 'Leaderboards' && <LeaderboardScreen />}
       {page === 'Profile' && <ProfileScreen />}
-    </ScreenFrame>
+      </ScreenFrame>
+    </ModeProvider>
   );
 }
 

@@ -5,7 +5,7 @@
 
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { T } from '../theme';
+import { ACCENTS, T } from '../theme';
 
 export type IconName =
   | 'home' | 'search' | 'compass' | 'users' | 'live' | 'plus'
@@ -54,28 +54,15 @@ export function Icon({
   );
 }
 
-// The wordmark, with TikTok's cyan/red chromatic split behind it.
+// The wordmark. The offset chromatic split this used to have was TikTok's
+// logo treatment, which is the single most derivative thing the app had.
+// Instead the name carries the two modes: Trap is the competitive lime, Chat
+// is the social violet, so the logo states what the product is.
 export function Wordmark({ size = 26 }: { size?: number }) {
   return (
     <View style={styles.mark}>
-      {/* The offset copies are the colour fringe, not words. Hidden from
-          assistive tech so the name is not read out three times. */}
-      <Text
-        importantForAccessibility="no-hide-descendants"
-        accessibilityElementsHidden
-        style={[styles.markCyan, { fontSize: size, left: -1.5 }]}
-      >
-        Trap
-      </Text>
-      <Text
-        importantForAccessibility="no-hide-descendants"
-        accessibilityElementsHidden
-        style={[styles.markRed, { fontSize: size, left: 1.5 }]}
-      >
-        Trap
-      </Text>
-      <Text style={[styles.markText, { fontSize: size }]}>Trap</Text>
-      <Text style={[styles.markThin, { fontSize: size }]}>Chat</Text>
+      <Text style={[styles.markTrap, { fontSize: size }]}>Trap</Text>
+      <Text style={[styles.markChat, { fontSize: size }]}>Chat</Text>
     </View>
   );
 }
@@ -83,8 +70,6 @@ export function Wordmark({ size = 26 }: { size?: number }) {
 const styles = StyleSheet.create({
   glyph: { textAlign: 'center' },
   mark: { flexDirection: 'row', alignItems: 'center' },
-  markText: { color: T.text, fontWeight: '900', letterSpacing: -0.5 },
-  markThin: { color: T.text, fontWeight: '300', letterSpacing: -0.5 },
-  markCyan: { position: 'absolute', color: T.accentCyan, fontWeight: '900', letterSpacing: -0.5 },
-  markRed: { position: 'absolute', color: T.accent, fontWeight: '900', letterSpacing: -0.5 },
+  markTrap: { color: ACCENTS.competitive, fontWeight: '900', letterSpacing: -0.8 },
+  markChat: { color: ACCENTS.social, fontWeight: '900', letterSpacing: -0.8 },
 });
