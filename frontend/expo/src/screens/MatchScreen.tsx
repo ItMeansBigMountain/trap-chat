@@ -24,7 +24,7 @@ interface ChatLine {
 }
 
 export function MatchScreen() {
-  const { state, leaveMatch } = useApp();
+  const { state, forfeit } = useApp();
   const match = state.currentMatch;
   const [lines, setLines] = useState<ChatLine[]>([]);
   const [draft, setDraft] = useState('');
@@ -53,6 +53,16 @@ export function MatchScreen() {
     const offError = api.onError(({ message }) =>
       add({ from: 'system', text: `Error: ${message}`, system: true }),
     );
+    const offFinished = api.onMatchFinished((data) => {
+      const outcome = (data as { outcome?: string }).outcome;
+      add({
+        from: 'system',
+        text: outcome === 'stalemate'
+          ? 'Match ended in a stalemate: the other player disconnected.'
+          : 'Match finished.',
+        system: true,
+      });
+    });
 
     // The context already joins the socket room when the match is entered.
     // Joining again here would make the server emit a second player_joined to
@@ -63,6 +73,7 @@ export function MatchScreen() {
       offJoined();
       offLeft();
       offError();
+      offFinished();
     };
   }, [match?.id]);
 
@@ -85,17 +96,20 @@ export function MatchScreen() {
       <View style={styles.header}>
         <View style={{ flex: 1 }}>
           <Text style={styles.gameName}>{match.game?.name ?? 'Match'}</Text>
-          <Text style={styles.sub}>Share this code so a friend can join</Text>
+          <Text style={styles.sub}>Ranked 1v1</Text>
         </View>
-        <TouchableOpacity onPress={leaveMatch} style={styles.leaveBtn}>
-          <Text style={styles.leaveText}>Leave</Text>
+        <TouchableOpacity onPress={forfeit} style={styles.leaveBtn}>
+          <Text style={styles.leaveText}>Forfeit</Text>
         </TouchableOpacity>
       </View>
 
       <View style={styles.codeBox}>
-        <Text style={styles.codeLabel}>ROOM CODE</Text>
+        <Text style={styles.codeLabel}>RANKED MATCH</Text>
         <Text style={styles.code} selectable>
           {match.room_code}
+        </Text>
+        <Text style={styles.codeNote}>
+          Play it out. Leaving early forfeits, and a disconnect is a stalemate.
         </Text>
       </View>
 
@@ -157,6 +171,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   codeLabel: { color: '#6b7280', fontSize: 11, letterSpacing: 1.5, marginBottom: 4 },
+  codeNote: { color: '#6b7280', fontSize: 11, marginTop: 8, textAlign: 'center', lineHeight: 15 },
   code: { color: '#818cf8', fontSize: 28, fontWeight: '800', letterSpacing: 3 },
   chat: { flex: 1, marginHorizontal: 20 },
   chatContent: { paddingBottom: 12 },

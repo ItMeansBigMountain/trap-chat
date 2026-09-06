@@ -31,6 +31,9 @@ export interface Game {
   max_players: number;
   is_1v1: boolean;
   default_time_sec: number;
+  // 'social' channels are drop-in and never ranked; 'competitive' games are
+  // matchmaking-only and feed the leaderboards.
+  category: 'social' | 'competitive';
 }
 
 export type GameSlug = 

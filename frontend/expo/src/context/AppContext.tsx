@@ -71,6 +71,8 @@ interface AppContextValue {
   // Rooms
   createRoom: (gameSlug: GameSlug) => Promise<string>;
   joinRoomByCode: (code: string) => Promise<void>;
+  enterSocial: (gameSlug: GameSlug) => Promise<void>;
+  forfeit: () => void;
   submitResult: (matchId: number, result: GameResult) => Promise<void>;
   // Match
   joinMatch: (matchId: number) => void;
@@ -88,7 +90,7 @@ function attachSocketListeners(dispatch: React.Dispatch<Action>) {
       status: 'active',
       created_at: new Date().toISOString(),
       settings: {},
-      game: { id: 0, slug: game, name: game, max_players: 2, is_1v1: true, default_time_sec: 60 }
+      game: { id: 0, slug: game, name: game, max_players: 2, is_1v1: true, default_time_sec: 60, category: 'competitive' }
     }});
     dispatch({ type: 'SET_SEARCHING', payload: { isSearching: false, game: null } });
   });
@@ -218,7 +220,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           status: 'active',
           created_at: new Date().toISOString(),
           settings: {},
-          game: { id: 0, slug: result.game, name: result.game, max_players: 2, is_1v1: true, default_time_sec: 60 }
+          game: { id: 0, slug: result.game, name: result.game, max_players: 2, is_1v1: true, default_time_sec: 60, category: 'competitive' }
         }});
         dispatch({ type: 'SET_SEARCHING', payload: { isSearching: false, game: null } });
       }
@@ -240,7 +242,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       status: 'active',
       created_at: new Date().toISOString(),
       settings: {},
-      game: { id: 0, slug: gameSlug, name: gameSlug, max_players: 20, is_1v1: false, default_time_sec: 0 }
+      game: { id: 0, slug: gameSlug, name: gameSlug, max_players: 20, is_1v1: false, default_time_sec: 0, category: 'social' }
     }});
     dispatch({ type: 'SET_SEARCHING', payload: { isSearching: false, game: null } });
     api.joinMatch(matchId);
@@ -257,6 +259,30 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const joined = await api.joinRoom(code.trim().toUpperCase());
     enterMatch(joined.match_id, joined.room_code, joined.game);
   }, [enterMatch]);
+
+  // Social: drop into any open channel that is not the one just left, and
+  // start a fresh one when there is nowhere to go. This is what "next" does,
+  // so skipping must never dead-end on an empty lobby.
+  const enterSocial = useCallback(async (gameSlug: GameSlug) => {
+    const leavingCode = state.currentMatch?.room_code;
+    if (state.currentMatch) {
+      api.leaveMatch(state.currentMatch.id);
+      dispatch({ type: 'SET_MATCH', payload: null });
+    }
+    const rooms = await api.listRooms();
+    const candidate = (rooms as unknown as { code: string; game: string }[]).find(
+      (room) => room.game === gameSlug && room.code !== leavingCode,
+    );
+    const target = candidate ?? (await api.createRoom(gameSlug, {}));
+    const joined = await api.joinRoom(target.code);
+    enterMatch(joined.match_id, joined.room_code, joined.game);
+  }, [enterMatch, state.currentMatch]);
+
+  // Leaving a ranked match early is a forfeit; the server settles it.
+  const forfeit = useCallback(() => {
+    if (state.currentMatch) api.leaveMatch(state.currentMatch.id);
+    dispatch({ type: 'SET_MATCH', payload: null });
+  }, [state.currentMatch]);
 
   const cancelSearch = useCallback(() => {
     dispatch({ type: 'SET_SEARCHING', payload: { isSearching: false, game: null } });
@@ -285,7 +311,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       requestLocation,
       fetchGames,
       startSearch, cancelSearch, submitResult,
-      createRoom, joinRoomByCode,
+      createRoom, joinRoomByCode, enterSocial, forfeit,
       joinMatch, leaveMatch,
     }}>
       {children}

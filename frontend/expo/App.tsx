@@ -1,49 +1,60 @@
 import 'react-native-gesture-handler';
-import React from 'react';
-import { NavigationContainer, DarkTheme } from '@react-navigation/native';
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import React, { useState } from 'react';
 import { AppProvider, useApp } from './src/context/AppContext';
-import { LobbyScreen } from './src/screens/LobbyScreen';
 import { AuthScreen } from './src/screens/AuthScreen';
-import { RoomsScreen } from './src/screens/RoomsScreen';
+import { SocialScreen } from './src/screens/SocialScreen';
+import { CompetitiveScreen } from './src/screens/CompetitiveScreen';
+import { LeaderboardScreen } from './src/screens/LeaderboardScreen';
 import { MatchScreen } from './src/screens/MatchScreen';
+import { ScreenFrame, PageName } from './src/components/ScreenFrame';
 import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 
-const Stack = createNativeStackNavigator();
-
-function AppNavigator() {
+function AppShell() {
   const { state } = useApp();
+  const [page, setPage] = useState<PageName>('Social');
+
   if (state.auth.status === 'loading') {
-    return <View style={styles.loading}><ActivityIndicator color="#6366f1" size="large" /><Text style={styles.loadingText}>Loading Trap Chat…</Text></View>;
+    return (
+      <View style={styles.loading}>
+        <ActivityIndicator color="#6366f1" size="large" />
+        <Text style={styles.loadingText}>Loading Trap Chat…</Text>
+      </View>
+    );
   }
+
+  if (state.auth.status === 'unauthenticated') {
+    return <AuthScreen />;
+  }
+
+  // A ranked match takes over the screen: competitive play cannot be skipped
+  // away from, only finished or forfeited. Social matches stay inside the
+  // Social page, because skipping is the whole point there.
+  const match = state.currentMatch;
+  if (match) {
+    const category = state.games.find((g) => g.slug === match.game?.slug)?.category;
+    if (category === 'competitive') {
+      return <MatchScreen />;
+    }
+  }
+
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
-      {state.auth.status === 'unauthenticated' ? (
-        <Stack.Screen name="Auth" component={AuthScreen} />
-      ) : state.currentMatch ? (
-        // An active match takes over the whole stack, so matchmaking and room
-        // joins both land here without any imperative navigation. Leaving the
-        // match clears it and drops back to the lobby.
-        <Stack.Screen name="Match" component={MatchScreen} />
-      ) : (
-        <>
-          <Stack.Screen name="Lobby" component={LobbyScreen} />
-          <Stack.Screen name="Rooms" component={RoomsScreen} />
-        </>
-      )}
-    </Stack.Navigator>
+    <ScreenFrame title={page} active={page} onNavigate={setPage}>
+      {page === 'Social' && <SocialScreen />}
+      {page === 'Competitive' && <CompetitiveScreen />}
+      {page === 'Leaderboards' && <LeaderboardScreen />}
+    </ScreenFrame>
   );
 }
 
 export default function App() {
   return (
     <AppProvider>
-      <NavigationContainer theme={DarkTheme}><AppNavigator /></NavigationContainer>
+      <AppShell />
     </AppProvider>
   );
 }
 
-const styles = StyleSheet.create({ loading: { flex: 1, backgroundColor: '#09090b', justifyContent: 'center', alignItems: 'center' }, loadingText: { color: '#a1a1aa', marginTop: 12 } },);
-  
-  // Deployment smoke-test screen is intentionally replaced by the real lobby above.
-  
+const styles = StyleSheet.create({
+  loading: { flex: 1, backgroundColor: '#08090d', justifyContent: 'center', alignItems: 'center' },
+  loadingText: { color: '#a1a1aa', marginTop: 12 },
+});

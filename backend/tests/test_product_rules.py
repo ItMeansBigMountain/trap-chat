@@ -134,3 +134,15 @@ def test_an_empty_room_is_cleaned_up_after_a_minute(tmp_path):
     assert code not in [room["code"] for room in listed], "abandoned room still advertised"
     with module.app.app_context():
         assert module.Room.query.filter_by(code=code).first() is None, "abandoned room not deleted"
+
+
+def test_guests_can_open_a_social_channel(tmp_path):
+    """Social is the front door and guests are most of it, so creating a
+    channel must not demand an account."""
+    module = load(tmp_path)
+    client, _ = guest_client(module)
+
+    response = client.post("/api/rooms", json={"game_slug": "textchat"})
+
+    assert response.status_code == 200, response.get_data(as_text=True)
+    assert response.get_json()["code"]

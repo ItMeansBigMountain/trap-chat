@@ -665,7 +665,9 @@ def api_list_rooms():
 
 
 @app.route('/api/rooms', methods=['POST'])
-@auth_required
+# Social channels are the front door and most arrivals are guests, so opening
+# one must not demand an account. Competitive is refused below regardless.
+@guest_or_auth
 def api_create_room():
     data = request.get_json() or {}
     game_slug = data.get('game_slug')
@@ -675,7 +677,7 @@ def api_create_room():
     if game.category == COMPETITIVE:
         return jsonify({'error': 'competitive games use matchmaking, not room codes'}), 400
     settings = data.get('settings', {})
-    room = Room(code=gen_room_code(), game_id=game.id, host_user_id=request.user.id, settings_json=json.dumps(settings), status='open')
+    room = Room(code=gen_room_code(), game_id=game.id, host_user_id=request.user.id if request.user else None, settings_json=json.dumps(settings), status='open')
     db.session.add(room)
     db.session.commit()
     return jsonify({'code': room.code, 'game': game.slug, 'settings': settings})
