@@ -236,6 +236,31 @@ jobs:
           curl --fail --max-time 30 -o /dev/null -w "HTTP %{http_code}\n" "https://${hostname}/"
           echo "- Frontend: https://${hostname}" >> "$GITHUB_STEP_SUMMARY"
 
+      # WAIT FOR NEW BUNDLE TO SERVE
+      # STALE BUNDLE FAILS TESTS FALSELY
+      - name: Wait for the uploaded bundle
+        run: |
+          # Static Web Apps can serve the previous bundle for several minutes
+          # after an upload returns. Testing then runs new test code against
+          # old app code and fails for a reason that has nothing to do with
+          # the change. The backend waits on GIT_SHA for exactly this; the
+          # frontend waits on the bundle filename, which is content-hashed.
+          expected=$(grep -o '_expo/static/js/web/index-[a-z0-9]*\.js' dist/index.html | head -1)
+          if [ -z "$expected" ]; then
+            echo "::error::Could not read the bundle name from dist/index.html"
+            exit 1
+          fi
+          echo "waiting for $expected"
+          for i in $(seq 1 60); do
+            if curl -s --max-time 30 "${{ steps.site.outputs.url }}" | grep -q "$expected"; then
+              echo "the new bundle is live after $((i * 10))s"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::Still serving an older bundle after 10 minutes."
+          exit 1
+
       # DRIVE THE DEPLOYED SITE FOR REAL
       # HTTP 200 IS NOT A WORKING APP
       - uses: actions/setup-python@v5

@@ -1,7 +1,7 @@
 // Trap Chat — Icons
-// Line icons drawn with plain views so nothing is fetched at runtime. The CDN
-// is blocked for stylesheets and fonts on this deployment, and an icon font
-// that fails to load leaves a page full of tofu boxes.
+// Icons drawn from characters so nothing is fetched at runtime. Nothing stops
+// us loading an icon font -- there is no CSP on the deployment -- but one that
+// fails to load leaves a page of tofu boxes, and these cost no request.
 
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';

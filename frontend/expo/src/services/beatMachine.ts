@@ -1,12 +1,12 @@
 // Trap Chat — Beat Machine
 // Synthesises the beat instead of streaming one.
 //
-// Two reasons, and the second is the important one. Media cannot be loaded
-// from a CDN on this deployment, so a beat file would have to ship in the
-// bundle. And scoring someone against a recording means detecting where its
-// beats are, which is the step every other app in this space gets wrong.
-// A beat we schedule ourselves has a grid that is exact by construction: we
-// know when every sixteenth falls because we put it there.
+// The reason is precision, not delivery. Scoring someone against a recording
+// means first detecting where its beats are, which is the step every other app
+// in this space gets wrong. A beat we schedule ourselves has a grid that is
+// exact by construction: we know when every sixteenth falls because we put it
+// there. Shipping real beats later is a question of licensing and bundle size,
+// and would mean measuring each one's tempo and downbeat offset up front.
 //
 // Everything is scheduled ahead on the AudioContext clock rather than from a
 // timer. setInterval drifts by tens of milliseconds under load, which is the
