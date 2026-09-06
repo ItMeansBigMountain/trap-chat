@@ -203,6 +203,7 @@ export function SocialScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <Animated.View style={[styles.stage, { transform: [{ translateY: drag }] }]} {...pan.panHandlers}>
+        <View style={styles.column}>
         <View style={styles.stageTop}>
           <Text style={styles.room}>#{match.room_code}</Text>
           <Text style={styles.hint}>Swipe up to skip</Text>
@@ -278,6 +279,7 @@ export function SocialScreen() {
             {connecting ? <ActivityIndicator color="#fff" /> : <Text style={styles.nextText}>Next ↑</Text>}
           </TouchableOpacity>
         </View>
+        </View>
       </Animated.View>
     </KeyboardAvoidingView>
   );
@@ -285,12 +287,15 @@ export function SocialScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#08090d' },
-  stage: { flex: 1, paddingHorizontal: 18, paddingBottom: 18 },
+  stage: { flex: 1, paddingHorizontal: 18, paddingBottom: 18, alignItems: 'center' },
+  // Hold a phone-shaped column on a wide screen rather than stretching the
+  // call across the whole desktop.
+  column: { flex: 1, width: '100%', maxWidth: 460 },
   stageTop: { alignItems: 'center', paddingVertical: 10 },
   room: { color: '#818cf8', fontWeight: '800', letterSpacing: 2 },
   hint: { color: '#4b5563', fontSize: 11, marginTop: 3 },
-  videoWrap: { height: 260, marginBottom: 10 },
-  chat: { flex: 1 },
+  videoWrap: { flex: 1, minHeight: 220, marginBottom: 10 },
+  chat: { maxHeight: 150, flexGrow: 0 },
   chatContent: { paddingVertical: 10 },
   placeholder: { color: '#6b7280', fontStyle: 'italic' },
   line: { marginBottom: 8 },

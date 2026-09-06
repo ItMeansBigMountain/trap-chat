@@ -60,7 +60,7 @@ export function VideoStage({
         <Stream
           stream={remoteStream}
           muted={false}
-          style={{ width: '100%', height: '100%', objectFit: 'cover', background: '#000' }}
+          style={{ width: '100%', height: '100%', objectFit: 'cover', background: '#000', display: 'block' }}
         />
       ) : (
         <View style={styles.waiting}>
@@ -88,7 +88,7 @@ export function VideoStage({
           <Stream
             stream={localStream}
             muted
-            style={{ width: '100%', height: '100%', objectFit: 'cover', background: '#000', transform: 'scaleX(-1)' }}
+            style={{ width: '100%', height: '100%', objectFit: 'cover', background: '#000', display: 'block', transform: 'scaleX(-1)' }}
           />
         </View>
       )}
@@ -115,8 +115,8 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: 12,
     top: 12,
-    width: 96,
-    height: 128,
+    width: 88,
+    height: 118,
     borderRadius: 12,
     overflow: 'hidden',
     borderWidth: 1,

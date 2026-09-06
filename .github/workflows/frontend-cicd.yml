@@ -123,6 +123,7 @@ jobs:
           ( cd frontend/expo && EXPO_PUBLIC_API_URL=http://127.0.0.1:8091               EXPO_PUBLIC_SOCKET_URL=http://127.0.0.1:8091               npx expo export --platform web --output-dir dist-test --clear )
           python -m http.server 8100 --bind 127.0.0.1 --directory frontend/expo/dist-test &
           sleep 3
+          python frontend/expo/e2e/rep_counter.py http://127.0.0.1:8100/
           python frontend/expo/e2e/smoke.py http://127.0.0.1:8100/
           rm -rf frontend/expo/dist-test
 

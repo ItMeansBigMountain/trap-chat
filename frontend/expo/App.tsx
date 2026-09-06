@@ -8,6 +8,8 @@ import { CompetitiveScreen } from './src/screens/CompetitiveScreen';
 import { LeaderboardScreen } from './src/screens/LeaderboardScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
 import { MatchScreen } from './src/screens/MatchScreen';
+import { RankedMatchScreen } from './src/screens/RankedMatchScreen';
+import { EXERCISES } from './src/services/repCounter';
 import { ScreenFrame, PageName } from './src/components/ScreenFrame';
 import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 
@@ -43,7 +45,9 @@ function AppShell() {
   if (match) {
     const category = state.games.find((g) => g.slug === match.game?.slug)?.category;
     if (category === 'competitive') {
-      return <MatchScreen />;
+      // Push-ups and squats are counted from the camera, so they get the
+      // scoring screen. Rap Battle and Looks Battle have no counter yet.
+      return EXERCISES[match.game?.slug ?? ''] ? <RankedMatchScreen /> : <MatchScreen />;
     }
   }
 
