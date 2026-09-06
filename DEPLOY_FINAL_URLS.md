@@ -1,11 +1,11 @@
 # Trap Chat — Azure Deployment
 
-Verified 2026-09-05 UTC.
+Verified 2026-09-06 UTC.
 
-- Public frontend: https://yellow-ground-05896030f.6.azurestaticapps.net
-- Public backend: https://trap-chat-api.lemonpond-8d23f386.eastus.azurecontainerapps.io
-- Health: https://trap-chat-api.lemonpond-8d23f386.eastus.azurecontainerapps.io/api/health
-- Games API: https://trap-chat-api.lemonpond-8d23f386.eastus.azurecontainerapps.io/api/games
+- Public frontend: https://zealous-bay-02a100210.3.azurestaticapps.net
+- Public backend: https://trap-chat-api.bluerock-306ed9db.centralus.azurecontainerapps.io
+- Health: https://trap-chat-api.bluerock-306ed9db.centralus.azurecontainerapps.io/api/health
+- Games API: https://trap-chat-api.bluerock-306ed9db.centralus.azurecontainerapps.io/api/games
 - Azure resource group: rg-trap-chat-prod
 - Azure Container App: trap-chat-api
 - Azure Static Web App: stapp-trap-chat-prod
@@ -14,7 +14,7 @@ Verified 2026-09-05 UTC.
 
 - Frontend returned HTTP 200 and text/html.
 - Backend health returned HTTP 200 with ok true and productionReadyStorage true.
-- Games API returned HTTP 200 with the seven-game catalog.
+- Games API returned HTTP 200 with the six-game catalog (4 competitive + 2 social).
 - The deployed Expo bundle contains the Container Apps endpoint and contains neither the retired azurewebsites.net hostname nor localhost:5000.
 - Two distinct guest clients joined match 1; retrying the first guest was idempotent; status transitioned from waiting to active with two players.
 - Both clients established direct Socket.IO WebSocket transports, joined the match room, relayed an offer signal, and exchanged a chat message.

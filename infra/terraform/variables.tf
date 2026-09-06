@@ -2,14 +2,6 @@ variable "azure_subscription_id" {
   type      = string
   sensitive = true
 }
-variable "location" {
-  type    = string
-  default = "East US 2"
-}
-variable "resource_group_location" {
-  type    = string
-  default = "East US"
-}
 variable "resource_group_name" {
   type    = string
   default = "rg-trap-chat-prod"
