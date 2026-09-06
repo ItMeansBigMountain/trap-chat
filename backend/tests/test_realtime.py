@@ -105,3 +105,68 @@ def test_leaving_on_purpose_still_removes_you(backend):
     with backend.app.app_context():
         players = backend.MatchPlayer.query.filter_by(match_id=match_id).all()
         assert all(p.left_at is not None for p in players), "leaving did not register"
+
+
+def social_room(backend):
+    """A social room with one occupant, entered the way the app enters one."""
+    http = backend.app.test_client()
+    http.post("/api/auth/guest")
+    room = http.post(
+        "/api/rooms", json={"game_slug": "groupchat", "name": "abandoned"}
+    ).get_json()
+    joined = http.post(f"/api/rooms/{room['code']}/join").get_json()
+    socket = backend.socketio.test_client(backend.app, flask_test_client=http)
+    socket.emit("join_match", {"match_id": joined["match_id"]})
+    return http, socket, room["code"], joined["match_id"]
+
+
+def test_closing_the_tab_frees_a_social_room(backend):
+    """Browse filled up with rooms whose occupants had closed the tab. A
+    social seat is not a queue slot, so dropping the socket releases it and
+    the room becomes reapable."""
+    _, socket, code, match_id = social_room(backend)
+
+    socket.disconnect()
+
+    with backend.app.app_context():
+        players = backend.MatchPlayer.query.filter_by(match_id=match_id).all()
+        assert players, "the occupant vanished instead of being marked gone"
+        assert all(p.left_at is not None for p in players), (
+            "the seat is still held, so the room can never be reaped"
+        )
+
+
+def test_an_abandoned_social_room_stops_being_browsable(backend):
+    """The user-visible half: the room disappears from Browse once the
+    timeout has passed."""
+    from datetime import datetime, timedelta
+
+    http, socket, code, match_id = social_room(backend)
+    socket.disconnect()
+
+    with backend.app.app_context():
+        stale = datetime.utcnow() - timedelta(
+            seconds=backend.EMPTY_ROOM_TIMEOUT_SECONDS + 30
+        )
+        for player in backend.MatchPlayer.query.filter_by(match_id=match_id).all():
+            player.left_at = stale
+        backend.db.session.commit()
+
+    listed = [room["code"] for room in http.get("/api/rooms").get_json()]
+
+    assert code not in listed, "an abandoned room is still offered in Browse"
+
+
+def test_a_reconnecting_occupant_keeps_their_social_room(backend):
+    """The seat is released, not destroyed. Coming back must reclaim it,
+    otherwise a phone locking its screen loses the room."""
+    http, socket, code, match_id = social_room(backend)
+    socket.disconnect()
+
+    again = backend.socketio.test_client(backend.app, flask_test_client=http)
+    again.emit("join_match", {"match_id": match_id})
+
+    with backend.app.app_context():
+        players = backend.MatchPlayer.query.filter_by(match_id=match_id).all()
+        assert any(p.left_at is None for p in players), "rejoining did not reclaim the seat"
+    assert code in [room["code"] for room in http.get("/api/rooms").get_json()]

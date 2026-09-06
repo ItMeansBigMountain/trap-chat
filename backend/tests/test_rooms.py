@@ -63,3 +63,66 @@ def test_rejoining_a_room_does_not_duplicate_the_player(tmp_path):
 
         players = MatchPlayer.query.filter_by(match_id=match_id).all()
         assert len(players) == 1, f"expected one player row, got {len(players)}"
+
+
+def abandoned_room(module):
+    """A room two people joined over HTTP and nobody held a socket in, which
+    is exactly how the smoke tests left eleven of them in production."""
+    host = module.app.test_client()
+    host.post("/api/auth/guest")
+    room = host.post(
+        "/api/rooms", json={"game_slug": "groupchat", "name": "smoke room"}
+    ).get_json()
+    host.post(f"/api/rooms/{room['code']}/join")
+    other = module.app.test_client()
+    other.post("/api/auth/guest")
+    joined = other.post(f"/api/rooms/{room['code']}/join").get_json()
+    return host, room["code"], joined["match_id"]
+
+
+def browsable(client):
+    return [room["code"] for room in client.get("/api/rooms").get_json()]
+
+
+def test_a_room_nobody_is_connected_to_is_reaped(tmp_path):
+    """left_at is only ever written by a socket event, so a player who never
+    opened one held their seat forever and the room stayed in Browse for good.
+    Presence has to be observed, not inferred from a column nobody set."""
+    import importlib, os
+    from datetime import datetime, timedelta
+
+    os.environ["DATABASE_URL"] = f"sqlite:///{tmp_path / 'trapchat.db'}"
+    os.environ["SECRET_KEY"] = "test-secret"
+    module = importlib.import_module("app")
+    host, code, match_id = abandoned_room(module)
+
+    assert code in browsable(host), "the room was never browsable to begin with"
+
+    # No socket has been in it for well past the timeout.
+    module.MATCH_LAST_SEEN[match_id] = datetime.utcnow() - timedelta(
+        seconds=module.EMPTY_ROOM_TIMEOUT_SECONDS + 30
+    )
+
+    assert code not in browsable(host), "an abandoned room is still in Browse"
+
+
+def test_a_room_someone_is_still_connected_to_survives(tmp_path):
+    """The other half of the rule. Someone sitting quietly in a group chat
+    sends no events for minutes, and must not have the room deleted round them."""
+    import importlib, os
+    from datetime import datetime, timedelta
+
+    os.environ["DATABASE_URL"] = f"sqlite:///{tmp_path / 'trapchat.db'}"
+    os.environ["SECRET_KEY"] = "test-secret"
+    module = importlib.import_module("app")
+    host, code, match_id = abandoned_room(module)
+
+    module.MATCH_LAST_SEEN[match_id] = datetime.utcnow() - timedelta(
+        seconds=module.EMPTY_ROOM_TIMEOUT_SECONDS + 30
+    )
+    # ...but a socket is still holding it open, saying nothing.
+    module.SOCKET_IDENTITIES["a-silent-socket"] = {"matches": {match_id}}
+    try:
+        assert code in browsable(host), "a room with someone still in it was deleted"
+    finally:
+        module.SOCKET_IDENTITIES.pop("a-silent-socket", None)

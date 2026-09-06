@@ -337,6 +337,42 @@ def guest_or_auth(f):
     return wrapper
 
 
+# Which matches a socket is currently connected to, and when one was last
+# seen. left_at is only ever written by a socket event, so a player who joined
+# a room over HTTP and never opened a socket -- or whose socket was lost when
+# the container restarted -- held their seat forever and kept the room in
+# Browse for good. Presence is therefore observed here instead of inferred.
+# Single process, the same assumption MATCHMAKING_LOCK already makes.
+MATCH_LAST_SEEN = {}
+MATCH_LAST_SEEN_LOCK = threading.Lock()
+PROCESS_STARTED_AT = datetime.utcnow()
+
+
+def touch_match_presence(match_id):
+    with MATCH_LAST_SEEN_LOCK:
+        MATCH_LAST_SEEN[match_id] = datetime.utcnow()
+
+
+def match_last_seen(match_id):
+    """When a socket was last connected to this match.
+
+    A match this process has never seen a socket for counts as last seen when
+    the process started, not now: a restart drops every socket, so the rooms
+    that survived it get one full timeout to be reconnected to, while a room
+    nobody has touched since long before then is simply abandoned.
+    """
+    with MATCH_LAST_SEEN_LOCK:
+        return MATCH_LAST_SEEN.setdefault(match_id, PROCESS_STARTED_AT)
+
+
+def refresh_live_presence():
+    """Someone sitting quietly in a group chat sends no events for minutes, so
+    presence cannot come from traffic. Anyone still holding a socket counts."""
+    for identity in list(SOCKET_IDENTITIES.values()):
+        for match_id in list(identity.get('matches', ())):
+            touch_match_presence(match_id)
+
+
 def purge_abandoned_rooms():
     """Delete rooms whose players have all left for longer than the timeout.
 
@@ -345,6 +381,7 @@ def purge_abandoned_rooms():
     that read rooms, which avoids a background thread and keeps the work
     proportional to actual traffic.
     """
+    refresh_live_presence()
     cutoff = datetime.utcnow() - timedelta(seconds=EMPTY_ROOM_TIMEOUT_SECONDS)
     for room in Room.query.all():
         match = Match.query.filter_by(room_code=room.code).first()
@@ -354,12 +391,11 @@ def purge_abandoned_rooms():
                 db.session.delete(room)
             continue
         players = MatchPlayer.query.filter_by(match_id=match.id).all()
-        present = [p for p in players if p.left_at is None]
-        if present:
+        # A seat that was never released still counts as empty once nobody has
+        # been connected to the room for the timeout.
+        if [p for p in players if p.left_at is None] and match_last_seen(match.id) > cutoff:
             continue
         last_seen = max((p.left_at for p in players if p.left_at), default=None)
-        if players and last_seen is None:
-            continue
         if last_seen is not None and last_seen > cutoff:
             continue
         if not players and room.created_at and room.created_at >= cutoff:
@@ -1151,6 +1187,7 @@ def on_join_match(data):
         return
     join_room(f'match_{match_id}')
     SOCKET_IDENTITIES.setdefault(request.sid, {}).setdefault('matches', set()).add(match_id)
+    touch_match_presence(match_id)
     if player.left_at is not None:
         player.left_at = None  # rejoined
         db.session.commit()

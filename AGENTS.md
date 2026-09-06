@@ -211,6 +211,26 @@ project. Every cause was different, so check these before assuming a new one:
 Asking to queue again is also the recovery path: it returns an
 already-started match, so missing the `match_start` broadcast is survivable.
 
+## Room lifetime, and how presence is decided
+
+A room disappears once nobody has been in it for `EMPTY_ROOM_TIMEOUT_SECONDS`
+(60). Getting that right depends entirely on how "in it" is decided:
+
+- **Presence is observed, never inferred from `left_at`.** `left_at` is only
+  ever written by a socket event, so a player who joined a room over HTTP and
+  never opened a socket, or whose socket vanished when the container
+  restarted, kept their seat forever. One such ghost was enough to make a room
+  immortal, and Browse filled up with eleven dead rooms in production.
+- `MATCH_LAST_SEEN` records when a socket was last connected to each match,
+  and `refresh_live_presence()` re-stamps every match a live socket is in
+  before the reaper runs. Someone sitting silently in a group chat sends no
+  events for minutes, so presence cannot be read from traffic.
+- A match this process has never seen a socket for counts as last seen at
+  `PROCESS_STARTED_AT`. A restart drops every socket at once, so rooms get one
+  full timeout to be reconnected to instead of being swept immediately.
+- This is in-process state, the same assumption `MATCHMAKING_LOCK` makes. A
+  second worker would need this moved into the database.
+
 ## Gameplay and scoring
 
 - **Reps are counted in the player's browser** from MediaPipe pose landmarks.
