@@ -116,7 +116,7 @@ jobs:
             curl -sf http://127.0.0.1:8091/api/health >/dev/null && break
             sleep 1
           done
-          python backend/e2e/api_smoke.py http://127.0.0.1:8091
+          python backend/e2e/api_smoke.py http://127.0.0.1:8091 --include-scoring
           # Build the test bundle into its own directory and reset the
           # bundler cache. Metro keys its cache on sources, not on
           # EXPO_PUBLIC_* values, so reusing dist let this bundle ship.

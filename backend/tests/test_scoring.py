@@ -110,3 +110,24 @@ def test_both_results_finish_the_match(tmp_path):
         match = module.db.session.get(module.Match, match_id)
         assert match.status == "finished"
         assert match.finished_at is not None
+
+
+def test_startup_drops_scores_the_rules_would_now_reject(tmp_path):
+    """Rows written before the validation existed must not keep the top of the
+    ladder. The rule is the rule for old entries too."""
+    module = load(tmp_path)
+    holder = account(module, "legacy_cheater")
+
+    with module.app.app_context():
+        game = module.Game.query.filter_by(slug="pushups").first()
+        user = module.User.query.filter_by(username="legacy_cheater").first()
+        module.db.session.add(module.Leaderboard(
+            game_id=game.id, user_id=user.id, best_score=90000,
+        ))
+        module.db.session.commit()
+
+    with module.app.app_context():
+        module.purge_impossible_scores()
+
+    board = module.app.test_client().get("/api/leaderboard/pushups").get_json()
+    assert not [row for row in board if row["username"] == "legacy_cheater"], board

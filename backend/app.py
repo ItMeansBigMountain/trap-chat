@@ -434,6 +434,25 @@ def validate_result(game, data):
     return None
 
 
+def purge_impossible_scores():
+    """Drop leaderboard rows that the current rules would reject.
+
+    Scores were once taken on trust, so the ladder can hold numbers that are
+    not possible. Validation only guards new submissions; this makes the rule
+    retroactive rather than leaving a bogus entry at the top forever.
+    """
+    removed = 0
+    for entry in Leaderboard.query.all():
+        game = db.session.get(Game, entry.game_id)
+        if validate_result(game, {'score': entry.best_score}):
+            db.session.delete(entry)
+            removed += 1
+    if removed:
+        db.session.commit()
+        app.logger.warning('dropped %s leaderboard entries that are not possible', removed)
+    return removed
+
+
 def gen_room_code():
     return uuid.uuid4().hex[:8].upper()
 
@@ -522,6 +541,7 @@ def _initialize_database(attempts=12, delay=5):
                 db.create_all()
                 _ensure_schema()
                 _seed_games()
+                purge_impossible_scores()
             return
         except OperationalError as exc:
             last_error = exc
