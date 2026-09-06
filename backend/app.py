@@ -23,6 +23,15 @@ SECRET_KEY = os.environ.get('SECRET_KEY', 'dev-secret-change-in-production')
 JWT_EXP_HOURS = 24 * 30  # 30 days
 # How long a queued match stays joinable. Past this it is treated as abandoned.
 QUEUE_TIMEOUT_MINUTES = 5
+# How long an empty room lingers before it is deleted, front and back.
+EMPTY_ROOM_TIMEOUT_SECONDS = 60
+
+# Rating every player starts at, and what a guest counts as when pairing.
+DEFAULT_RATING = 1000
+
+SOCIAL = 'social'
+COMPETITIVE = 'competitive'
+RETIRED = 'retired'
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
 app.config['SQLALCHEMY_DATABASE_URI'] = DB_PATH
@@ -135,6 +144,10 @@ class Game(db.Model):
     max_players = db.Column(db.Integer, nullable=False)
     is_1v1 = db.Column(db.Boolean, nullable=False, default=False)
     default_time_sec = db.Column(db.Integer, default=60)
+    # 'social' (drop-in channels, joinable by room code), 'competitive'
+    # (ranked matchmaking only) or 'retired' (kept for old matches' foreign
+    # keys, never listed).
+    category = db.Column(db.String(20), nullable=False, default=SOCIAL, index=True)
 
 
 class Match(db.Model):
@@ -258,6 +271,40 @@ def guest_or_auth(f):
     return wrapper
 
 
+def purge_abandoned_rooms():
+    """Delete rooms whose players have all left for longer than the timeout.
+
+    Nobody should browse into a room that everyone abandoned, so the instance
+    disappears from the backend as well as the UI. Runs lazily on the paths
+    that read rooms, which avoids a background thread and keeps the work
+    proportional to actual traffic.
+    """
+    cutoff = datetime.utcnow() - timedelta(seconds=EMPTY_ROOM_TIMEOUT_SECONDS)
+    for room in Room.query.all():
+        match = Match.query.filter_by(room_code=room.code).first()
+        if match is None:
+            # A room that never became a match is abandoned once it is old.
+            if room.created_at and room.created_at < cutoff:
+                db.session.delete(room)
+            continue
+        players = MatchPlayer.query.filter_by(match_id=match.id).all()
+        present = [p for p in players if p.left_at is None]
+        if present:
+            continue
+        last_seen = max((p.left_at for p in players if p.left_at), default=None)
+        if players and last_seen is None:
+            continue
+        if last_seen is not None and last_seen > cutoff:
+            continue
+        if not players and room.created_at and room.created_at >= cutoff:
+            continue
+        for player in players:
+            db.session.delete(player)
+        db.session.delete(match)
+        db.session.delete(room)
+    db.session.commit()
+
+
 def match_player_count(match):
     return MatchPlayer.query.filter_by(match_id=match.id).count()
 
@@ -279,14 +326,52 @@ def haversine(lat1, lng1, lat2, lng2):
 # Seed Games
 # -------------------------
 DEFAULT_GAMES = [
-    {'slug': 'pushups', 'name': 'Push-Ups', 'max_players': 2, 'is_1v1': True, 'default_time_sec': 60},
-    {'slug': 'squats', 'name': 'Squats', 'max_players': 2, 'is_1v1': True, 'default_time_sec': 60},
-    {'slug': 'rapbattle', 'name': 'Rap Battle', 'max_players': 2, 'is_1v1': True, 'default_time_sec': 60},
-    {'slug': 'symmetry', 'name': 'Facial Symmetry', 'max_players': 2, 'is_1v1': True, 'default_time_sec': 30},
-    {'slug': 'mog', 'name': 'Mog (Looksmaxx)', 'max_players': 2, 'is_1v1': True, 'default_time_sec': 30},
-    {'slug': 'textchat', 'name': 'Text Chat FFA', 'max_players': 20, 'is_1v1': False, 'default_time_sec': 0},
-    {'slug': 'ffa', 'name': 'Generic FFA', 'max_players': 20, 'is_1v1': False, 'default_time_sec': 0},
+    # Competitive: ranked 1v1, matchmaking only, feeds the leaderboards.
+    {'slug': 'pushups', 'name': 'Push-Ups', 'max_players': 2, 'is_1v1': True, 'default_time_sec': 60, 'category': COMPETITIVE},
+    {'slug': 'squats', 'name': 'Squats', 'max_players': 2, 'is_1v1': True, 'default_time_sec': 60, 'category': COMPETITIVE},
+    {'slug': 'rapbattle', 'name': 'Rap Battle', 'max_players': 2, 'is_1v1': True, 'default_time_sec': 60, 'category': COMPETITIVE},
+    # Facial Symmetry and Mog were the same contest under two names.
+    {'slug': 'looks', 'name': 'Looks Battle', 'max_players': 2, 'is_1v1': True, 'default_time_sec': 30, 'category': COMPETITIVE},
+    # Social: drop-in channels, joinable by room code, never ranked.
+    {'slug': 'textchat', 'name': 'Text Chat', 'max_players': 20, 'is_1v1': False, 'default_time_sec': 0, 'category': SOCIAL},
+    {'slug': 'ffa', 'name': 'Group Chat', 'max_players': 20, 'is_1v1': False, 'default_time_sec': 0, 'category': SOCIAL},
 ]
+
+# Slugs that existed before the catalog was reorganised. They stay in the table
+# so old matches keep their foreign key, but they are never offered again.
+REPLACED_GAMES = {'symmetry': 'looks', 'mog': 'looks'}
+
+
+def _ensure_schema():
+    """create_all never alters an existing table, so a database written by an
+    older build is missing newer columns. Add them in place."""
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(db.engine)
+    if 'games' not in inspector.get_table_names():
+        return
+    columns = {c['name'] for c in inspector.get_columns('games')}
+    if 'category' not in columns:
+        db.session.execute(text(
+            f"ALTER TABLE games ADD COLUMN category VARCHAR(20) NOT NULL DEFAULT '{SOCIAL}'"
+        ))
+        db.session.commit()
+
+
+def _seed_games():
+    for spec in DEFAULT_GAMES:
+        game = Game.query.filter_by(slug=spec['slug']).first()
+        if game is None:
+            db.session.add(Game(**spec))
+        else:
+            # Keep names and categories current without disturbing history.
+            for field, value in spec.items():
+                setattr(game, field, value)
+    for old_slug in REPLACED_GAMES:
+        stale = Game.query.filter_by(slug=old_slug).first()
+        if stale is not None:
+            stale.category = RETIRED
+    db.session.commit()
 
 def _initialize_database(attempts=12, delay=5):
     """Create tables and seed the game catalog.
@@ -300,10 +385,8 @@ def _initialize_database(attempts=12, delay=5):
         try:
             with app.app_context():
                 db.create_all()
-                for g in DEFAULT_GAMES:
-                    if not Game.query.filter_by(slug=g['slug']).first():
-                        db.session.add(Game(**g))
-                db.session.commit()
+                _ensure_schema()
+                _seed_games()
             return
         except OperationalError as exc:
             last_error = exc
@@ -402,10 +485,16 @@ def api_login():
     return resp
 
 
+def guest_display_name(session_id):
+    """Guests are anonymous but must still be tellable apart on screen, so
+    every one carries a hex discriminator: Guest#a3f2c1."""
+    return f'Guest#{session_id[-6:]}'
+
+
 @app.route('/api/auth/guest', methods=['POST'])
 def api_guest():
     session_id = f'guest_{uuid.uuid4().hex[:12]}'
-    resp = jsonify({'guest_session_id': session_id, 'display_name': f'Guest_{session_id[-4:]}'})
+    resp = jsonify({'guest_session_id': session_id, 'display_name': guest_display_name(session_id)})
     options = cookie_options()
     options['max_age'] = 3600
     resp.set_cookie('guest_session', session_id, **options)
@@ -463,8 +552,16 @@ def api_location():
 # -------------------------
 @app.route('/api/games', methods=['GET'])
 def api_games():
-    games = Game.query.all()
-    return jsonify([{'id': g.id, 'slug': g.slug, 'name': g.name, 'max_players': g.max_players, 'is_1v1': g.is_1v1, 'default_time_sec': g.default_time_sec} for g in games])
+    games = Game.query.filter(Game.category != RETIRED).all()
+    return jsonify([{
+        'id': g.id,
+        'slug': g.slug,
+        'name': g.name,
+        'max_players': g.max_players,
+        'is_1v1': g.is_1v1,
+        'default_time_sec': g.default_time_sec,
+        'category': g.category,
+    } for g in games])
 
 
 # -------------------------
@@ -508,10 +605,29 @@ def api_quick_match():
         })
 
     # Find a waiting match the caller has not already joined, or create one.
-    waiting = Match.query.filter_by(game_id=game.id, status='waiting').filter(
+    candidates = Match.query.filter_by(game_id=game.id, status='waiting').filter(
         Match.created_at >= fresh_cutoff,
         ~Match.players.any(identity_filter),
-    ).first()
+    ).all()
+    # Competitive pairing feeds the ladder, so prefer an opponent near your
+    # rating rather than whoever queued first. Guests have no rating, so they
+    # sit at the default and pair with each other naturally.
+    waiting = None
+    if candidates:
+        if game.category == COMPETITIVE:
+            my_rating = request.user.rating if request.user else DEFAULT_RATING
+
+            def rating_gap(candidate):
+                ratings = [
+                    p.user.rating for p in candidate.players
+                    if p.user is not None and p.user.rating is not None
+                ]
+                opponent = sum(ratings) / len(ratings) if ratings else DEFAULT_RATING
+                return abs(opponent - my_rating)
+
+            waiting = min(candidates, key=rating_gap)
+        else:
+            waiting = candidates[0]
     if waiting:
         match = waiting
     else:
@@ -519,7 +635,7 @@ def api_quick_match():
         db.session.add(match)
         db.session.flush()
 
-    display = request.user.username if request.user else f'Guest_{guest_session[-4:]}'
+    display = request.user.username if request.user else guest_display_name(guest_session or 'anon')
     db.session.add(MatchPlayer(
         match_id=match.id,
         user_id=request.user.id if request.user else None,
@@ -543,7 +659,8 @@ def api_quick_match():
 
 @app.route('/api/rooms', methods=['GET'])
 def api_list_rooms():
-    rooms = Room.query.filter_by(status='open').all()
+    purge_abandoned_rooms()
+    rooms = Room.query.filter_by(status='open').join(Game).filter(Game.category == SOCIAL).all()
     return jsonify([{'code': r.code, 'game': r.game.slug, 'game_name': r.game.name, 'settings': json.loads(r.settings_json or '{}'), 'player_count': len(r.players) if hasattr(r, 'players') else 0} for r in rooms])
 
 
@@ -553,6 +670,10 @@ def api_create_room():
     data = request.get_json() or {}
     game_slug = data.get('game_slug')
     game = Game.query.filter_by(slug=game_slug).first_or_404()
+    # Competitive play is matchmaking only: a private code would let friends
+    # arrange ranked results between themselves.
+    if game.category == COMPETITIVE:
+        return jsonify({'error': 'competitive games use matchmaking, not room codes'}), 400
     settings = data.get('settings', {})
     room = Room(code=gen_room_code(), game_id=game.id, host_user_id=request.user.id, settings_json=json.dumps(settings), status='open')
     db.session.add(room)
@@ -566,7 +687,9 @@ def api_join_room(code):
     room = Room.query.filter_by(code=code).first_or_404()
     if room.status != 'open':
         return jsonify({'error': 'room not open'}), 400
-    display = request.user.username if request.user else f'Guest_{(guest_session_id() or "anon")[-4:]}'
+    if room.game.category == COMPETITIVE:
+        return jsonify({'error': 'competitive games use matchmaking, not room codes'}), 400
+    display = request.user.username if request.user else guest_display_name(guest_session_id() or 'anon')
 
     # A room has exactly one match, reused by everyone who joins. Match.room_code
     # is unique, so minting a fresh Match per join made the second player fail
@@ -681,7 +804,45 @@ def on_socket_connect(auth=None):
 
 @socketio.on('disconnect')
 def on_socket_disconnect(*args):
-    SOCKET_IDENTITIES.pop(request.sid, None)
+    identity = SOCKET_IDENTITIES.pop(request.sid, None) or {}
+    # Record the departure so an emptied room can be cleaned up, and settle any
+    # competitive match the player walked out of.
+    for match_id in list(identity.get('matches', ())):
+        _mark_player_left(match_id, identity, reason='disconnected')
+
+
+def _mark_player_left(match_id, identity, reason='left'):
+    user_id = identity.get('user_id')
+    guest = identity.get('guest_session')
+    query = MatchPlayer.query.filter_by(match_id=match_id)
+    player = (
+        query.filter_by(user_id=user_id).first() if user_id
+        else query.filter_by(guest_session_id=guest).first() if guest
+        else None
+    )
+    if player is None or player.left_at is not None:
+        return None
+    player.left_at = datetime.utcnow()
+
+    match = db.session.get(Match, match_id)
+    if match is not None and match.status == 'active':
+        remaining = [p for p in match.players if p.left_at is None]
+        if not remaining:
+            match.status = 'finished'
+            match.finished_at = datetime.utcnow()
+        elif match.game is not None and match.game.category == COMPETITIVE:
+            # A competitive match cannot be won by outlasting someone's
+            # connection, so someone leaving early settles it as a stalemate.
+            match.status = 'finished'
+            match.finished_at = datetime.utcnow()
+            socketio.emit('match_finished', {
+                'match_id': match.id,
+                'outcome': 'stalemate',
+                'reason': reason,
+                'results': [{'name': p.display_name, 'result': {}} for p in match.players],
+            }, to=f'match_{match.id}')
+    db.session.commit()
+    return player
 
 
 def socket_player(match_id):
@@ -714,6 +875,10 @@ def on_join_match(data):
     if not player:
         return
     join_room(f'match_{match_id}')
+    SOCKET_IDENTITIES.setdefault(request.sid, {}).setdefault('matches', set()).add(match_id)
+    if player.left_at is not None:
+        player.left_at = None  # rejoined
+        db.session.commit()
     emit('joined_match', {'match_id': match_id})
     emit('player_joined', {
         'match_id': match_id,
@@ -728,6 +893,9 @@ def on_leave_match(data):
     if not player:
         return
     leave_room(f'match_{match_id}')
+    identity = SOCKET_IDENTITIES.get(request.sid) or {}
+    identity.get('matches', set()).discard(match_id)
+    _mark_player_left(match_id, identity, reason='left')
     emit('player_left', {
         'match_id': match_id,
         'player_id': player.id,

@@ -38,7 +38,7 @@ def test_match_member_can_join_and_relay_chat_and_signals(backend):
     chats = event_payload(second, "chat_message")
     assert chats[0]["match_id"] == match["match_id"]
     assert chats[0]["text"] == "hello"
-    assert chats[0]["from"].startswith("Guest_")
+    assert chats[0]["from"].startswith("Guest#")
 
     first.emit("signal", {"match_id": match["match_id"], "type": "offer", "offer": {"sdp": "test"}})
     signals = event_payload(second, "signal")

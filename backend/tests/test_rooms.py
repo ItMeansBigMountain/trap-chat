@@ -29,7 +29,7 @@ def test_two_players_joining_one_room_land_in_the_same_match(tmp_path):
     host = client_for(app, "room_host")
     guest = client_for(app, "room_guest")
 
-    created = host.post("/api/rooms", json={"game_slug": "rapbattle"})
+    created = host.post("/api/rooms", json={"game_slug": "textchat"})
     assert created.status_code == 200, created.get_data(as_text=True)
     code = created.get_json()["code"]
 
@@ -49,7 +49,7 @@ def test_rejoining_a_room_does_not_duplicate_the_player(tmp_path):
     app = load_app(tmp_path)
     host = client_for(app, "rejoin_host")
 
-    code = host.post("/api/rooms", json={"game_slug": "rapbattle"}).get_json()["code"]
+    code = host.post("/api/rooms", json={"game_slug": "textchat"}).get_json()["code"]
     first = host.post(f"/api/rooms/{code}/join")
     second = host.post(f"/api/rooms/{code}/join")
 
