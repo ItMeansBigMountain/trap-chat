@@ -125,6 +125,7 @@ jobs:
           sleep 3
           python frontend/expo/e2e/rep_counter.py http://127.0.0.1:8100/
           python frontend/expo/e2e/smoke.py http://127.0.0.1:8100/
+          python frontend/expo/e2e/ranked_match.py http://127.0.0.1:8100/
           rm -rf frontend/expo/dist-test
 
       # BAKE BACKEND URL INTO BUNDLE

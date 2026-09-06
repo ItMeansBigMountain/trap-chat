@@ -1073,9 +1073,16 @@ def on_socket_connect(auth=None):
 @socketio.on('disconnect')
 def on_socket_disconnect(*args):
     identity = SOCKET_IDENTITIES.pop(request.sid, None) or {}
-    # Record the departure so an emptied room can be cleaned up, and settle any
-    # competitive match the player walked out of.
     for match_id in list(identity.get('matches', ())):
+        match = db.session.get(Match, match_id)
+        # A socket drops for all sorts of reasons that are not a decision to
+        # leave: Socket.IO reconnects on any blip, a backgrounded tab is cut
+        # off, the container scales. Treating that as leaving pulled players
+        # out of their own queue, so the next arrival found an empty room and
+        # both sat on Searching. A queue that really was abandoned is caught by
+        # QUEUE_TIMEOUT_MINUTES instead.
+        if match is None or match.status == 'waiting':
+            continue
         _mark_player_left(match_id, identity, reason='disconnected')
 
 

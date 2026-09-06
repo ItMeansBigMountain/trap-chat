@@ -65,6 +65,9 @@ function saveStored(key: string, value: string | null): void {
 
 class ApiService {
   private socket: Socket | null = null;
+  // The match this client believes it is in, queued or active. Kept so a
+  // reconnect can put it back in the room it was broadcast to.
+  private currentMatchId: number | null = null;
   private authToken: string | null = loadStored(TOKEN_KEY);
   private guestSessionId: string | null = loadStored(GUEST_KEY);
 
@@ -184,7 +187,15 @@ class ApiService {
         guest_session: this.guestSessionId ?? undefined,
       },
     });
-    this.socket.on('connect', () => console.log('[Socket] Connected:', this.socket?.id));
+    this.socket.on('connect', () => {
+      console.log('[Socket] Connected:', this.socket?.id);
+      // A reconnect gets a new session id, and room membership is per session.
+      // Without re-joining, match_start is broadcast to a room this client is
+      // no longer in and it waits forever.
+      if (this.currentMatchId != null) {
+        this.socket?.emit('join_match', { match_id: this.currentMatchId });
+      }
+    });
     this.socket.on('disconnect', (reason) => console.log('[Socket] Disconnected:', reason));
     this.socket.on('connect_error', (err) => console.error('[Socket] Connection error:', err));
     return this.socket;
@@ -206,8 +217,20 @@ class ApiService {
   }
 
   getSocket(): Socket | null { return this.socket; }
-  joinMatch(matchId: number): void { this.socket?.emit('join_match', { match_id: matchId }); }
-  leaveMatch(matchId: number): void { this.socket?.emit('leave_match', { match_id: matchId }); }
+  joinMatch(matchId: number): void {
+    this.currentMatchId = matchId;
+    this.socket?.emit('join_match', { match_id: matchId });
+  }
+
+  leaveMatch(matchId: number): void {
+    if (this.currentMatchId === matchId) this.currentMatchId = null;
+    this.socket?.emit('leave_match', { match_id: matchId });
+  }
+
+  /** Stop claiming a match without leaving it, for cancelling a search. */
+  forgetMatch(): void {
+    this.currentMatchId = null;
+  }
   sendGameAction(matchId: number, action: string, payload: Record<string, unknown>): void { this.socket?.emit('game_action', { match_id: matchId, action, payload }); }
   sendSignal(signal: WebRTCSignal): void { this.socket?.emit('signal', signal); }
   sendChatMessage(matchId: number, text: string): void { this.socket?.emit('chat_message', { match_id: matchId, text }); }

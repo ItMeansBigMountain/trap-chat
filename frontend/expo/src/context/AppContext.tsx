@@ -305,6 +305,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [state.currentMatch]);
 
   const cancelSearch = useCallback(() => {
+    // Stop claiming the queued match, or a socket reconnect would silently
+    // put this client back into a queue it just left. The server-side entry
+    // expires on its own.
+    api.forgetMatch();
     dispatch({ type: 'SET_SEARCHING', payload: { isSearching: false, game: null } });
   }, []);
 
