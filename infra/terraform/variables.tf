@@ -2,6 +2,13 @@ variable "azure_subscription_id" {
   type      = string
   sensitive = true
 }
+variable "resource_group_location" {
+  # Every other resource reads azurerm_resource_group.trap_chat.location, so
+  # this is the single place the region is set.
+  type    = string
+  default = "Central US"
+}
+
 variable "resource_group_name" {
   type    = string
   default = "rg-trap-chat-prod"
