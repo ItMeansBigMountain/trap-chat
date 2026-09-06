@@ -117,19 +117,38 @@ jobs:
             sleep 1
           done
           python backend/e2e/api_smoke.py http://127.0.0.1:8091
-          ( cd frontend/expo && EXPO_PUBLIC_API_URL=http://127.0.0.1:8091               EXPO_PUBLIC_SOCKET_URL=http://127.0.0.1:8091 npm run build:web )
-          python -m http.server 8100 --bind 127.0.0.1 --directory frontend/expo/dist &
+          # Build the test bundle into its own directory and reset the
+          # bundler cache. Metro keys its cache on sources, not on
+          # EXPO_PUBLIC_* values, so reusing dist let this bundle ship.
+          ( cd frontend/expo && EXPO_PUBLIC_API_URL=http://127.0.0.1:8091               EXPO_PUBLIC_SOCKET_URL=http://127.0.0.1:8091               npx expo export --platform web --output-dir dist-test --clear )
+          python -m http.server 8100 --bind 127.0.0.1 --directory frontend/expo/dist-test &
           sleep 3
           python frontend/expo/e2e/smoke.py http://127.0.0.1:8100/
+          rm -rf frontend/expo/dist-test
 
       # BAKE BACKEND URL INTO BUNDLE
       - name: Export web build
         if: github.event_name != 'pull_request'
         working-directory: frontend/expo
-        run: npm run build:web
+        run: npx expo export --platform web --clear
         env:
           EXPO_PUBLIC_API_URL: ${{ steps.backend_url.outputs.url }}
           EXPO_PUBLIC_SOCKET_URL: ${{ steps.backend_url.outputs.url }}
+
+      # REFUSE TO SHIP A TEST BACKEND
+      # A CACHED BUNDLE ONCE LEAKED LOCALHOST
+      - name: Verify the bundle points at production
+        if: github.event_name != 'pull_request'
+        run: |
+          if grep -rq "127.0.0.1:8091" frontend/expo/dist; then
+            echo "::error::The built bundle contains the test backend URL."
+            exit 1
+          fi
+          if ! grep -rq "${{ steps.backend_url.outputs.url }}" frontend/expo/dist; then
+            echo "::error::The built bundle does not contain the production backend URL."
+            exit 1
+          fi
+          echo "bundle points at ${{ steps.backend_url.outputs.url }}"
 
       # HAND BUNDLE TO DEPLOY STAGE
       - name: Upload web bundle Artifact
