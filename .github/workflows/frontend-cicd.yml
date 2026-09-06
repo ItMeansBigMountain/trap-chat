@@ -222,6 +222,14 @@ jobs:
 
       - name: Post-deployment integration tests
         run: |
+          # The backend may be mid-rollout from its own pipeline, and it scales
+          # to zero when idle. Wake it before driving the UI at it.
+          fqdn=$(az containerapp show --name "$CONTAINER_APP_NAME"             --resource-group "$RESOURCE_GROUP"             --query properties.configuration.ingress.fqdn -o tsv)
+          for i in $(seq 1 30); do
+            curl -sf --max-time 30 "https://${fqdn}/api/health" >/dev/null && break
+            echo "waiting for the backend ($i)"
+            sleep 10
+          done
           python -m pip install --quiet playwright
           python -m playwright install --with-deps chromium
           python frontend/expo/e2e/smoke.py "${{ steps.site.outputs.url }}"

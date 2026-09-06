@@ -88,12 +88,23 @@ class Smoke:
         self.page.get_by_text(NAV_LABELS.get(name, name), exact=True).last.click()
         self.page.wait_for_timeout(1400)
 
-    def sign_in_as_guest(self, display_name: str = "smoke") -> None:
-        self.page.goto(TARGET, wait_until="networkidle", timeout=90000)
-        self.page.wait_for_timeout(2500)
-        self.page.fill("input[placeholder='Pick a name (optional)']", display_name)
-        self.page.get_by_text("Continue as guest", exact=True).click()
-        self.page.wait_for_timeout(4000)
+    def sign_in_as_guest(self, display_name: str = "smoke", attempts: int = 5) -> None:
+        # A container that scaled to zero, or one mid-rollout, can take a few
+        # seconds to answer. Retry rather than failing the deployment over a
+        # cold start.
+        for attempt in range(1, attempts + 1):
+            self.page.goto(TARGET, wait_until="networkidle", timeout=90000)
+            self.page.wait_for_timeout(2500)
+            try:
+                self.page.fill("input[placeholder='Pick a name (optional)']", display_name)
+                self.page.get_by_text("Continue as guest", exact=True).click()
+            except Exception:
+                pass
+            self.page.wait_for_timeout(5000)
+            if "Create an account to save scores" not in self.body():
+                return
+            print(f"  (guest sign-in attempt {attempt} did not take, retrying)", flush=True)
+            self.page.wait_for_timeout(4000)
 
 
 def run_for(smoke: Smoke) -> None:
