@@ -19,6 +19,20 @@ import {
 
 // What /api/rooms actually returns when browsing, which is not the Room
 // database row: it carries occupancy and a display name.
+// A judged battle is settled by the room, so the tally is part of the state
+// the screen renders, not an afterthought on the result.
+export interface VoteRow {
+  player_id: number;
+  display_name: string;
+  votes: number;
+}
+
+export interface VoteState {
+  match_id: number;
+  tally: VoteRow[];
+  my_vote: number | null;
+}
+
 export interface SocialRoom {
   code: string;
   name: string;
@@ -176,6 +190,17 @@ class ApiService {
     return this.request(`/api/matches/${matchId}/submit`, { method: 'POST', body: JSON.stringify(result) });
   }
 
+  async getVotes(matchId: number): Promise<VoteState> {
+    return this.request(`/api/matches/${matchId}/votes`);
+  }
+
+  async castVote(matchId: number, forPlayerId: number): Promise<VoteState> {
+    return this.request(`/api/matches/${matchId}/vote`, {
+      method: 'POST',
+      body: JSON.stringify({ for_player_id: forPlayerId }),
+    });
+  }
+
   async getLeaderboard(gameSlug: GameSlug): Promise<LeaderboardEntry[]> {
     return this.request(`/api/leaderboard/${gameSlug}`);
   }
@@ -249,6 +274,7 @@ class ApiService {
   // The backend relays game actions back out on 'game_action', not 'game_state'.
   // Listening on 'game_state' silently never fires.
   onGameAction(cb: (data: { match_id: number; action: string; payload: Record<string, unknown>; from: string }) => void): () => void { this.socket?.on('game_action', cb); return () => this.socket?.off('game_action', cb); }
+  onVoteUpdate(cb: (data: { match_id: number; tally: VoteRow[] }) => void): () => void { this.socket?.on('vote_update', cb); return () => this.socket?.off('vote_update', cb); }
   onError(cb: (data: { message: string; code?: string }) => void): () => void { this.socket?.on('error', cb); return () => this.socket?.off('error', cb); }
 }
 

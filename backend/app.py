@@ -235,6 +235,28 @@ class MatchPlayer(db.Model):
     user = db.relationship('User', backref='match_players')
 
 
+class BattleVote(db.Model):
+    """One audience vote in a judged battle.
+
+    Rap Battle and Looks Battle have no objective winner, and every real
+    battle rap platform settles that the same way: the room decides. The flow
+    score sitting next to this measures whether someone was on beat, which is
+    not the same question as who won.
+    """
+
+    __tablename__ = 'battle_votes'
+    id = db.Column(db.Integer, primary_key=True)
+    match_id = db.Column(db.Integer, db.ForeignKey('matches.id'), nullable=False, index=True)
+    # Whoever is voting, by the same two identities everything else uses.
+    voter_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True, index=True)
+    voter_guest_session = db.Column(db.String(64), nullable=True, index=True)
+    for_player_id = db.Column(db.Integer, db.ForeignKey('match_players.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    match = db.relationship('Match', backref='votes')
+    for_player = db.relationship('MatchPlayer', backref='votes')
+
+
 class Leaderboard(db.Model):
     __tablename__ = 'leaderboards'
     id = db.Column(db.Integer, primary_key=True)
@@ -1080,6 +1102,95 @@ def api_submit_result(match_id):
         socketio.emit('match_finished', {'match_id': match.id, 'results': [{'name': p.display_name, 'result': json.loads(p.result_json) if p.result_json else {}} for p in match.players]}, to=f'match_{match.id}')
 
     return jsonify({'ok': True})
+
+
+# -------------------------
+# Judged battles: the audience decides
+# -------------------------
+
+# Games with no objective score. A machine can measure whether someone was on
+# beat; it cannot measure whether the bar was good, so it does not get to say
+# who won.
+JUDGED_GAMES = {'rapbattle', 'looks'}
+
+
+def vote_tally(match):
+    """Votes per player, plus every player so a zero still shows up."""
+    counts = {p.id: 0 for p in match.players}
+    for vote in BattleVote.query.filter_by(match_id=match.id).all():
+        if vote.for_player_id in counts:
+            counts[vote.for_player_id] += 1
+    return [
+        {
+            'player_id': player.id,
+            'display_name': player.display_name,
+            'votes': counts[player.id],
+        }
+        for player in match.players
+    ]
+
+
+def voter_filter(match_id):
+    return and_(
+        BattleVote.match_id == match_id,
+        BattleVote.voter_user_id == request.user.id
+        if request.user
+        else BattleVote.voter_guest_session == guest_session_id(),
+    )
+
+
+@app.route('/api/matches/<int:match_id>/votes', methods=['GET'])
+@guest_or_auth
+def api_battle_votes(match_id):
+    match = Match.query.get_or_404(match_id)
+    mine = BattleVote.query.filter(voter_filter(match_id)).first()
+    return jsonify({
+        'match_id': match.id,
+        'tally': vote_tally(match),
+        'my_vote': mine.for_player_id if mine else None,
+    })
+
+
+@app.route('/api/matches/<int:match_id>/vote', methods=['POST'])
+@guest_or_auth
+def api_battle_vote(match_id):
+    match = Match.query.get_or_404(match_id)
+    if match.game is None or match.game.slug not in JUDGED_GAMES:
+        return jsonify({'error': 'this game is not decided by votes'}), 400
+
+    data = request.get_json() or {}
+    target = MatchPlayer.query.filter_by(
+        id=data.get('for_player_id'), match_id=match_id
+    ).first()
+    if target is None:
+        return jsonify({'error': 'no such player in this battle'}), 400
+
+    # You cannot vote for yourself, which is the whole reason a vote means
+    # anything. Both competitors are in the room and can vote for the other.
+    is_me = (
+        target.user_id == request.user.id
+        if request.user
+        else target.guest_session_id == guest_session_id()
+    )
+    if is_me:
+        return jsonify({'error': 'you cannot vote for yourself'}), 400
+
+    existing = BattleVote.query.filter(voter_filter(match_id)).first()
+    if existing is not None:
+        # Changing your mind is fine, voting twice is not.
+        existing.for_player_id = target.id
+    else:
+        db.session.add(BattleVote(
+            match_id=match_id,
+            voter_user_id=request.user.id if request.user else None,
+            voter_guest_session=None if request.user else guest_session_id(),
+            for_player_id=target.id,
+        ))
+    db.session.commit()
+
+    tally = vote_tally(match)
+    socketio.emit('vote_update', {'match_id': match.id, 'tally': tally}, to=f'match_{match.id}')
+    return jsonify({'match_id': match.id, 'tally': tally, 'my_vote': target.id})
 
 
 @app.route('/api/leaderboard/<slug>', methods=['GET'])

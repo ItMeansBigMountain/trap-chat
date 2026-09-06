@@ -66,6 +66,14 @@ Rules that follow from this shape:
   `provisioningState` and waits for the in-flight operation to drain before
   touching `trap-chat-api`. Keep those waits.
 
+## No staging environment
+
+There is one environment and it is public. This is a decision, not an
+oversight: a second environment doubles the Azure bill and halves how often
+anything actually gets looked at. Pushing to `main` releases to real users, so
+the tests in the pipeline are the safety net, and a broken deploy is fixed
+forward rather than promoted through a staging tier.
+
 ## The approval gates
 
 Every pipeline's second stage waits on a GitHub Environment. Each of these
@@ -251,6 +259,32 @@ A room disappears once nobody has been in it for `EMPTY_ROOM_TIMEOUT_SECONDS`
 - **Login and registration are rate limited** per caller, in memory. That
   holds while the backend is one replica; more than one needs shared storage
   for it to be a real limit.
+
+## Judged battles: what the machine decides and what it does not
+
+Rap Battle and Looks Battle have no objective score. Every real battle rap
+platform settles that the same way, and so does this one:
+
+- **The audience decides the winner.** `POST /api/matches/<id>/vote`, one vote
+  per identity, changeable, never for yourself. Spectators who are not
+  competing can vote: an audience is the point. Games with a real score
+  (push-ups, squats) reject votes outright, or the room could overrule the
+  leaderboard.
+- **The flow score is a statistic, not a verdict.** It measures whether
+  syllables landed on the beat. It cannot tell a good bar from a bad one, and
+  claiming otherwise would make the ladder meaningless. It breaks a tied vote
+  and nothing more.
+- **The beat is synthesised, not streamed** (`beatMachine.ts`). Media cannot
+  load from a CDN here, and more importantly a beat we schedule ourselves has
+  a grid that is exact by construction. Detecting the tempo of a recording is
+  the step this whole category of app gets wrong; we never have to.
+- **Onsets are timestamped on the beat machine's own AudioContext clock**, so
+  the syllable and the gridline it is measured against cannot drift apart.
+  Scheduling is done ahead on that clock rather than from `setInterval`, which
+  drifts by the same order as the thing being measured.
+- `flowScorer.ts` holds the rules and knows nothing about audio, so
+  `e2e/flow_scorer.py` can feed it synthetic onsets rather than trying to rap
+  into a headless Chrome.
 
 ## Testing
 
