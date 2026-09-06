@@ -20,7 +20,7 @@ const GAME_LABELS: Record<GameSlug, { title: string; subtitle: string; icon: str
 };
 
 export function LobbyScreen({ navigation }: { navigation: any }) {
-  const { state, startSearch, guest, logout } = useApp();
+  const { state, startSearch, cancelSearch, guest, logout } = useApp();
   const isSearching = state.isSearching;
   const [selectedMode, setSelectedMode] = useState<'chat' | 'competitive'>('chat');
 
@@ -80,6 +80,24 @@ export function LobbyScreen({ navigation }: { navigation: any }) {
           <Text style={styles.modeSubtext}>1v1 & FFA games</Text>
         </TouchableOpacity>
       </View>
+
+      {isSearching && (
+        <View style={styles.searchBanner}>
+          <ActivityIndicator size="small" color="#818cf8" />
+          <View style={styles.searchBannerBody}>
+            <Text style={styles.searchBannerTitle}>
+              Waiting for an opponent{state.searchGame ? ` at ${GAME_LABELS[state.searchGame].title}` : ''}
+            </Text>
+            <Text style={styles.searchBannerHint}>
+              To play against yourself, open the app in a different browser or a
+              private window. Two tabs in the same browser count as one player.
+            </Text>
+          </View>
+          <TouchableOpacity onPress={cancelSearch} style={styles.cancelBtn}>
+            <Text style={styles.cancelText}>Cancel</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Chat Mode Content */}
       {selectedMode === 'chat' && (
@@ -167,6 +185,12 @@ export function LobbyScreen({ navigation }: { navigation: any }) {
 
 const styles = StyleSheet.create({
   unavailable: { opacity: 0.4 },
+  searchBanner: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#111827', borderRadius: 12, padding: 14, marginBottom: 16 },
+  searchBannerBody: { flex: 1 },
+  searchBannerTitle: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  searchBannerHint: { color: '#9ca3af', fontSize: 12, marginTop: 4, lineHeight: 16 },
+  cancelBtn: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8, backgroundColor: '#1f2937' },
+  cancelText: { color: '#f87171', fontWeight: '700' },
   container: { flex: 1, backgroundColor: '#0a0a0a' },
   content: { padding: 20, paddingBottom: 40 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0a0a0a' },
