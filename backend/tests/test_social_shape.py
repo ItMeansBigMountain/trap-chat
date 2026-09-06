@@ -106,3 +106,21 @@ def test_browsing_shows_occupancy_so_you_can_pick(tmp_path):
 
     assert room["player_count"] == 1
     assert room["max_players"] > 2
+
+
+def test_only_catalog_games_are_ever_offered(tmp_path):
+    """The catalog is the code, the table is just storage. A leftover row from
+    an older build must never reach the UI, whatever its category says."""
+    module = load(tmp_path)
+
+    with module.app.app_context():
+        module.db.session.add(module.Game(
+            slug='ancient', name='Ancient Mode', max_players=9,
+            is_1v1=False, default_time_sec=0, category='social',
+        ))
+        module.db.session.commit()
+
+    offered = {g['slug'] for g in module.app.test_client().get('/api/games').get_json()}
+
+    assert 'ancient' not in offered, 'a row outside the catalog was offered'
+    assert {'chat1v1', 'groupchat', 'pushups', 'looks'} <= offered

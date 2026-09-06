@@ -383,10 +383,12 @@ def _seed_games():
             # Keep names and categories current without disturbing history.
             for field, value in spec.items():
                 setattr(game, field, value)
-    for old_slug in REPLACED_GAMES:
-        stale = Game.query.filter_by(slug=old_slug).first()
-        if stale is not None:
-            stale.category = RETIRED
+    db.session.commit()
+    # Retire superseded rows in one statement. They keep existing so old
+    # matches still resolve their foreign key, they are just never offered.
+    Game.query.filter(Game.slug.in_(list(REPLACED_GAMES))).update(
+        {Game.category: RETIRED}, synchronize_session=False
+    )
     db.session.commit()
 
 def _initialize_database(attempts=12, delay=5):
@@ -588,7 +590,13 @@ def api_location():
 # -------------------------
 @app.route('/api/games', methods=['GET'])
 def api_games():
-    games = Game.query.filter(Game.category != RETIRED).all()
+    # The catalog in DEFAULT_GAMES is the source of truth; the table is only
+    # storage. Filtering on the stored category alone let a row from an older
+    # build keep showing up after the catalog moved on, so match on slug.
+    offered = [spec['slug'] for spec in DEFAULT_GAMES]
+    games = Game.query.filter(Game.slug.in_(offered)).all()
+    order = {slug: i for i, slug in enumerate(offered)}
+    games.sort(key=lambda g: order.get(g.slug, len(order)))
     return jsonify([{
         'id': g.id,
         'slug': g.slug,
