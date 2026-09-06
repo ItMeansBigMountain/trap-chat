@@ -16,7 +16,7 @@ import { useApp } from '../context/AppContext';
 import api, { SocialRoom } from '../services/api';
 import { GameSlug } from '../types';
 
-export function BrowseScreen() {
+export function BrowseScreen({ onEntered }: { onEntered?: () => void }) {
   const { state, joinRoomByCode, createNamedRoom } = useApp();
   const [rooms, setRooms] = useState<SocialRoom[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,6 +47,7 @@ export function BrowseScreen() {
     setError(null);
     try {
       await fn();
+      onEntered?.();
     } catch (err: any) {
       setError(err?.message ?? 'That did not work');
     } finally {

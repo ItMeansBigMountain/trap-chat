@@ -31,7 +31,7 @@ export function ScreenFrame({
   onNavigate: (page: PageName) => void;
   children: React.ReactNode;
 }) {
-  const { state, setSocialMode } = useApp();
+  const { state, setSocialMode, leaveMatch } = useApp();
   const [open, setOpen] = useState(false);
   const [socialOpen, setSocialOpen] = useState(true);
   const slide = useRef(new Animated.Value(-DRAWER_WIDTH)).current;
@@ -72,9 +72,18 @@ export function ScreenFrame({
 
       <View style={styles.body}>{children}</View>
 
-      {open && <Pressable style={styles.backdrop} onPress={() => setOpen(false)} />}
+      {open && (
+        <Pressable
+          accessibilityLabel="Close menu"
+          style={styles.backdrop}
+          onPress={() => setOpen(false)}
+        />
+      )}
 
-      <Animated.View style={[styles.drawer, { transform: [{ translateX: slide }] }]}>
+      <Animated.View
+        pointerEvents={open ? 'auto' : 'none'}
+        style={[styles.drawer, { transform: [{ translateX: slide }] }]}
+      >
         <ScrollView contentContainerStyle={styles.drawerScroll} showsVerticalScrollIndicator={false}>
           <Text style={styles.brand}>Trap Chat</Text>
           {who ? <Text style={styles.who}>{who}</Text> : null}
@@ -85,6 +94,15 @@ export function ScreenFrame({
               <Text style={styles.nowLabel}>IN THIS ROOM</Text>
               <Text style={styles.nowName}>{match.game?.name ?? 'Room'}</Text>
               <Text style={styles.nowCode}>#{match.room_code}</Text>
+              <TouchableOpacity
+                style={styles.leaveRoom}
+                onPress={() => {
+                  setOpen(false);
+                  leaveMatch();
+                }}
+              >
+                <Text style={styles.leaveRoomText}>Leave room</Text>
+              </TouchableOpacity>
             </View>
           ) : (
             <View style={styles.nowCard}>
@@ -216,6 +234,8 @@ const styles = StyleSheet.create({
   nowName: { color: '#fff', fontSize: 15, fontWeight: '700', marginTop: 5 },
   nowCode: { color: '#818cf8', fontSize: 12, letterSpacing: 2, marginTop: 2, fontWeight: '700' },
   nowIdle: { color: '#6b7280', fontSize: 12, marginTop: 5 },
+  leaveRoom: { marginTop: 11, paddingVertical: 9, borderRadius: 9, backgroundColor: '#1f2430', alignItems: 'center' },
+  leaveRoomText: { color: '#f87171', fontWeight: '700', fontSize: 13 },
   group: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 13, paddingHorizontal: 12, borderRadius: 12, marginTop: 4 },
   groupIcon: { fontSize: 18 },
   groupText: { color: '#e5e7eb', fontSize: 16, fontWeight: '700', flex: 1 },

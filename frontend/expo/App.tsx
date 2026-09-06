@@ -47,16 +47,13 @@ function AppShell() {
     }
   }
 
-  // A social room opened from Browse is still a conversation, so show it.
-  const activePage: PageName = match && page === 'Browse' ? 'Random' : page;
-
   return (
-    <ScreenFrame title={TITLES[activePage]} active={activePage} onNavigate={setPage}>
-      {activePage === 'Random' && <SocialScreen />}
-      {activePage === 'Browse' && <BrowseScreen />}
-      {activePage === 'Competitive' && <CompetitiveScreen />}
-      {activePage === 'Leaderboards' && <LeaderboardScreen />}
-      {activePage === 'Profile' && <ProfileScreen />}
+    <ScreenFrame title={TITLES[page]} active={page} onNavigate={setPage}>
+      {page === 'Random' && <SocialScreen />}
+      {page === 'Browse' && <BrowseScreen onEntered={() => setPage('Random')} />}
+      {page === 'Competitive' && <CompetitiveScreen />}
+      {page === 'Leaderboards' && <LeaderboardScreen />}
+      {page === 'Profile' && <ProfileScreen />}
     </ScreenFrame>
   );
 }

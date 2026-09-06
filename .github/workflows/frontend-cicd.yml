@@ -46,6 +46,11 @@ jobs:
       # FETCH THE SOURCE
       - uses: actions/checkout@v4
 
+      # PYTHON RUNS THE SMOKE SUITES
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
       # INSTALL NODE, CACHE PACKAGES
       - uses: actions/setup-node@v4
         with:
@@ -92,6 +97,30 @@ jobs:
           fi
           echo "url=https://${fqdn}" >> "$GITHUB_OUTPUT"
           echo "Backend URL: https://${fqdn}"
+
+      # RUN THE UI AGAINST A REAL BACKEND
+      # CATCHES BROKEN SCREENS BEFORE DEPLOY
+      - name: Pre-deployment smoke tests
+        if: github.event_name != 'pull_request'
+        env:
+          PYTHONPATH: backend
+        run: |
+          set -e
+          python -m pip install --quiet -r backend/requirements.txt playwright requests
+          python -m playwright install --with-deps chromium
+          DATABASE_URL="sqlite:///$RUNNER_TEMP/smoke.db" SECRET_KEY=ci-smoke python - <<'PY' &
+          from app import app, socketio
+          socketio.run(app, host='127.0.0.1', port=8091, allow_unsafe_werkzeug=True)
+          PY
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:8091/api/health >/dev/null && break
+            sleep 1
+          done
+          python backend/e2e/api_smoke.py http://127.0.0.1:8091
+          ( cd frontend/expo && EXPO_PUBLIC_API_URL=http://127.0.0.1:8091               EXPO_PUBLIC_SOCKET_URL=http://127.0.0.1:8091 npm run build:web )
+          python -m http.server 8100 --bind 127.0.0.1 --directory frontend/expo/dist &
+          sleep 3
+          python frontend/expo/e2e/smoke.py http://127.0.0.1:8100/
 
       # BAKE BACKEND URL INTO BUNDLE
       - name: Export web build
@@ -174,8 +203,22 @@ jobs:
 
       # CONFIRM THE SITE ANSWERS
       - name: Verify frontend
+        id: site
         run: |
           hostname=$(az staticwebapp show --name "$STATIC_WEB_APP_NAME" --resource-group "$RESOURCE_GROUP" --query defaultHostname -o tsv)
+          echo "url=https://${hostname}/" >> "$GITHUB_OUTPUT"
           echo "Checking https://${hostname}/"
           curl --fail --max-time 30 -o /dev/null -w "HTTP %{http_code}\n" "https://${hostname}/"
           echo "- Frontend: https://${hostname}" >> "$GITHUB_STEP_SUMMARY"
+
+      # DRIVE THE DEPLOYED SITE FOR REAL
+      # HTTP 200 IS NOT A WORKING APP
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Post-deployment integration tests
+        run: |
+          python -m pip install --quiet playwright
+          python -m playwright install --with-deps chromium
+          python frontend/expo/e2e/smoke.py "${{ steps.site.outputs.url }}"

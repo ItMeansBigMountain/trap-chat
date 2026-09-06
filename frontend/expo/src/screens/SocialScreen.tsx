@@ -21,6 +21,8 @@ import {
 import { useApp } from '../context/AppContext';
 import api from '../services/api';
 import { GameSlug } from '../types';
+import call, { CallState, videoSupported } from '../services/webrtc';
+import { VideoStage } from '../components/VideoStage';
 
 const SCREEN_HEIGHT = Dimensions.get('window').height;
 
@@ -40,6 +42,16 @@ export function SocialScreen() {
   const [draft, setDraft] = useState('');
   const drag = useRef(new Animated.Value(0)).current;
   const scroller = useRef<ScrollView | null>(null);
+  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+  const [callState, setCallState] = useState<CallState>('idle');
+  const [callDetail, setCallDetail] = useState<string | undefined>();
+  const [muted, setMuted] = useState(false);
+  const [cameraOff, setCameraOff] = useState(false);
+
+  // Video is for 1:1 only. A twenty-person group call is a different product
+  // and a different bill.
+  const wantsVideo = state.socialMode === 'chat1v1' && videoSupported();
 
   const me =
     state.auth.status === 'authenticated'
@@ -93,13 +105,37 @@ export function SocialScreen() {
   ).current;
 
   useEffect(() => {
+    if (!match || !wantsVideo) return;
+    let cancelled = false;
+    call.start(match.id, {
+      onLocalStream: (stream) => !cancelled && setLocalStream(stream),
+      onRemoteStream: (stream) => !cancelled && setRemoteStream(stream),
+      onState: (next, detail) => {
+        if (cancelled) return;
+        setCallState(next);
+        setCallDetail(detail);
+      },
+    });
+    return () => {
+      cancelled = true;
+      setLocalStream(null);
+      setRemoteStream(null);
+      setCallState('idle');
+      call.stop();
+    };
+  }, [match?.id, wantsVideo]);
+
+  useEffect(() => {
     if (!match) return;
     const add = (line: Omit<Line, 'id'>) =>
       setLines((prev) => [...prev, { ...line, id: `${Date.now()}-${Math.random()}` }]);
     const offChat = api.onChatMessage(({ from, text }) => add({ from, text }));
-    const offJoined = api.onPlayerJoined(({ player }) =>
-      add({ from: 'system', text: `${player.display_name} joined`, system: true }),
-    );
+    const offJoined = api.onPlayerJoined(({ player }) => {
+      add({ from: 'system', text: `${player.display_name} joined`, system: true });
+      // The peer already in the room makes the offer, so both sides never
+      // offer at once and collide.
+      if (wantsVideo && call.active) call.makeOffer();
+    });
     const offLeft = api.onPlayerLeft(() =>
       add({ from: 'system', text: 'They left. Swipe up for someone new.', system: true }),
     );
@@ -172,6 +208,29 @@ export function SocialScreen() {
           <Text style={styles.hint}>Swipe up to skip</Text>
         </View>
 
+        {wantsVideo && (
+          <View style={styles.videoWrap}>
+            <VideoStage
+              localStream={localStream}
+              remoteStream={remoteStream}
+              state={callState}
+              detail={callDetail}
+              muted={muted}
+              cameraOff={cameraOff}
+              onToggleMute={() => {
+                const next = !muted;
+                setMuted(next);
+                call.setMuted(next);
+              }}
+              onToggleCamera={() => {
+                const next = !cameraOff;
+                setCameraOff(next);
+                call.setCameraOff(next);
+              }}
+            />
+          </View>
+        )}
+
         <ScrollView
           ref={scroller}
           style={styles.chat}
@@ -230,6 +289,7 @@ const styles = StyleSheet.create({
   stageTop: { alignItems: 'center', paddingVertical: 10 },
   room: { color: '#818cf8', fontWeight: '800', letterSpacing: 2 },
   hint: { color: '#4b5563', fontSize: 11, marginTop: 3 },
+  videoWrap: { height: 260, marginBottom: 10 },
   chat: { flex: 1 },
   chatContent: { paddingVertical: 10 },
   placeholder: { color: '#6b7280', fontStyle: 'italic' },
