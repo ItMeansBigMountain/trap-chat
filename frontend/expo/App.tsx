@@ -3,15 +3,25 @@ import React, { useState } from 'react';
 import { AppProvider, useApp } from './src/context/AppContext';
 import { AuthScreen } from './src/screens/AuthScreen';
 import { SocialScreen } from './src/screens/SocialScreen';
+import { BrowseScreen } from './src/screens/BrowseScreen';
 import { CompetitiveScreen } from './src/screens/CompetitiveScreen';
 import { LeaderboardScreen } from './src/screens/LeaderboardScreen';
+import { ProfileScreen } from './src/screens/ProfileScreen';
 import { MatchScreen } from './src/screens/MatchScreen';
 import { ScreenFrame, PageName } from './src/components/ScreenFrame';
 import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 
+const TITLES: Record<PageName, string> = {
+  Random: 'Random',
+  Browse: 'Browse',
+  Competitive: 'Competitive',
+  Leaderboards: 'Leaderboards',
+  Profile: 'Profile',
+};
+
 function AppShell() {
   const { state } = useApp();
-  const [page, setPage] = useState<PageName>('Social');
+  const [page, setPage] = useState<PageName>('Random');
 
   if (state.auth.status === 'loading') {
     return (
@@ -26,9 +36,9 @@ function AppShell() {
     return <AuthScreen />;
   }
 
-  // A ranked match takes over the screen: competitive play cannot be skipped
-  // away from, only finished or forfeited. Social matches stay inside the
-  // Social page, because skipping is the whole point there.
+  // A ranked match takes over the screen: competitive cannot be skipped away
+  // from, only played out or forfeited. Social matches stay inside their page,
+  // because skipping is the whole point there.
   const match = state.currentMatch;
   if (match) {
     const category = state.games.find((g) => g.slug === match.game?.slug)?.category;
@@ -37,11 +47,16 @@ function AppShell() {
     }
   }
 
+  // A social room opened from Browse is still a conversation, so show it.
+  const activePage: PageName = match && page === 'Browse' ? 'Random' : page;
+
   return (
-    <ScreenFrame title={page} active={page} onNavigate={setPage}>
-      {page === 'Social' && <SocialScreen />}
-      {page === 'Competitive' && <CompetitiveScreen />}
-      {page === 'Leaderboards' && <LeaderboardScreen />}
+    <ScreenFrame title={TITLES[activePage]} active={activePage} onNavigate={setPage}>
+      {activePage === 'Random' && <SocialScreen />}
+      {activePage === 'Browse' && <BrowseScreen />}
+      {activePage === 'Competitive' && <CompetitiveScreen />}
+      {activePage === 'Leaderboards' && <LeaderboardScreen />}
+      {activePage === 'Profile' && <ProfileScreen />}
     </ScreenFrame>
   );
 }

@@ -194,6 +194,15 @@ class Leaderboard(db.Model):
     user = db.relationship('User', backref='leaderboard')
 
 
+class GuestProfile(db.Model):
+    """A guest is still a person: this is the name they picked, kept against
+    their session so it survives a reload."""
+    __tablename__ = 'guest_profiles'
+    session_id = db.Column(db.String(64), primary_key=True)
+    display_name = db.Column(db.String(50), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
 class Room(db.Model):
     __tablename__ = 'rooms'
     id = db.Column(db.Integer, primary_key=True)
@@ -203,6 +212,8 @@ class Room(db.Model):
     settings_json = db.Column(db.Text, default='{}')
     status = db.Column(db.String(20), nullable=False, default='open')  # open, locked, in_progress, closed
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    # What the creator called it, so it is findable when browsing.
+    name = db.Column(db.String(60), nullable=True)
 
     game = db.relationship('Game', backref='rooms')
 
@@ -332,14 +343,14 @@ DEFAULT_GAMES = [
     {'slug': 'rapbattle', 'name': 'Rap Battle', 'max_players': 2, 'is_1v1': True, 'default_time_sec': 60, 'category': COMPETITIVE},
     # Facial Symmetry and Mog were the same contest under two names.
     {'slug': 'looks', 'name': 'Looks Battle', 'max_players': 2, 'is_1v1': True, 'default_time_sec': 30, 'category': COMPETITIVE},
-    # Social: drop-in channels, joinable by room code, never ranked.
-    {'slug': 'textchat', 'name': 'Text Chat', 'max_players': 20, 'is_1v1': False, 'default_time_sec': 0, 'category': SOCIAL},
-    {'slug': 'ffa', 'name': 'Group Chat', 'max_players': 20, 'is_1v1': False, 'default_time_sec': 0, 'category': SOCIAL},
+    # Social: drop-in channels, browsable and joinable by code, never ranked.
+    {'slug': 'chat1v1', 'name': '1:1 Chat', 'max_players': 2, 'is_1v1': True, 'default_time_sec': 0, 'category': SOCIAL},
+    {'slug': 'groupchat', 'name': 'Group Chat', 'max_players': 20, 'is_1v1': False, 'default_time_sec': 0, 'category': SOCIAL},
 ]
 
 # Slugs that existed before the catalog was reorganised. They stay in the table
 # so old matches keep their foreign key, but they are never offered again.
-REPLACED_GAMES = {'symmetry': 'looks', 'mog': 'looks'}
+REPLACED_GAMES = {'symmetry': 'looks', 'mog': 'looks', 'textchat': 'chat1v1', 'ffa': 'groupchat'}
 
 
 def _ensure_schema():
@@ -356,6 +367,11 @@ def _ensure_schema():
             f"ALTER TABLE games ADD COLUMN category VARCHAR(20) NOT NULL DEFAULT '{SOCIAL}'"
         ))
         db.session.commit()
+    if 'rooms' in inspector.get_table_names():
+        room_columns = {c['name'] for c in inspector.get_columns('rooms')}
+        if 'name' not in room_columns:
+            db.session.execute(text("ALTER TABLE rooms ADD COLUMN name VARCHAR(60)"))
+            db.session.commit()
 
 
 def _seed_games():
@@ -486,15 +502,35 @@ def api_login():
 
 
 def guest_display_name(session_id):
-    """Guests are anonymous but must still be tellable apart on screen, so
-    every one carries a hex discriminator: Guest#a3f2c1."""
-    return f'Guest#{session_id[-6:]}'
+    """Whatever the guest called themselves, with a hex discriminator on the
+    end so two people picking the same name stay tellable apart."""
+    profile = db.session.get(GuestProfile, session_id) if session_id else None
+    if profile:
+        return profile.display_name
+    return f'Guest#{session_id[-6:]}' if session_id else 'Guest#anon'
+
+
+def clean_room_name(raw):
+    """Room names are shown to strangers when browsing, so keep them short
+    and printable."""
+    cleaned = re.sub(r"[^A-Za-z0-9 _'-]", "", (raw or "")).strip()[:40]
+    return cleaned or None
+
+
+def clean_display_name(raw):
+    """Names are shown to strangers, so keep them short and printable."""
+    cleaned = re.sub(r'[^A-Za-z0-9 _-]', '', (raw or '')).strip()[:20]
+    return cleaned or None
 
 
 @app.route('/api/auth/guest', methods=['POST'])
 def api_guest():
     session_id = f'guest_{uuid.uuid4().hex[:12]}'
-    resp = jsonify({'guest_session_id': session_id, 'display_name': guest_display_name(session_id)})
+    chosen = clean_display_name((request.get_json(silent=True) or {}).get('display_name'))
+    display = f'{chosen}#{session_id[-6:]}' if chosen else f'Guest#{session_id[-6:]}'
+    db.session.add(GuestProfile(session_id=session_id, display_name=display))
+    db.session.commit()
+    resp = jsonify({'guest_session_id': session_id, 'display_name': display})
     options = cookie_options()
     options['max_age'] = 3600
     resp.set_cookie('guest_session', session_id, **options)
@@ -657,11 +693,31 @@ def api_quick_match():
     return jsonify({'match_id': match.id, 'room_code': match.room_code, 'game': game.slug, 'status': match.status, 'players': [{'display_name': p.display_name} for p in players]})
 
 
+def room_occupants(room):
+    match = Match.query.filter_by(room_code=room.code).first()
+    if match is None:
+        return []
+    return [p for p in match.players if p.left_at is None]
+
+
 @app.route('/api/rooms', methods=['GET'])
 def api_list_rooms():
     purge_abandoned_rooms()
     rooms = Room.query.filter_by(status='open').join(Game).filter(Game.category == SOCIAL).all()
-    return jsonify([{'code': r.code, 'game': r.game.slug, 'game_name': r.game.name, 'settings': json.loads(r.settings_json or '{}'), 'player_count': len(r.players) if hasattr(r, 'players') else 0} for r in rooms])
+    out = []
+    for r in rooms:
+        occupants = room_occupants(r)
+        out.append({
+            'code': r.code,
+            'name': r.name or f'{r.game.name} {r.code[:4]}',
+            'game': r.game.slug,
+            'game_name': r.game.name,
+            'settings': json.loads(r.settings_json or '{}'),
+            'player_count': len(occupants),
+            'max_players': r.game.max_players,
+            'players': [{'display_name': p.display_name} for p in occupants],
+        })
+    return jsonify(out)
 
 
 @app.route('/api/rooms', methods=['POST'])
@@ -677,10 +733,22 @@ def api_create_room():
     if game.category == COMPETITIVE:
         return jsonify({'error': 'competitive games use matchmaking, not room codes'}), 400
     settings = data.get('settings', {})
-    room = Room(code=gen_room_code(), game_id=game.id, host_user_id=request.user.id if request.user else None, settings_json=json.dumps(settings), status='open')
+    room = Room(
+        code=gen_room_code(),
+        game_id=game.id,
+        host_user_id=request.user.id if request.user else None,
+        settings_json=json.dumps(settings),
+        status='open',
+        name=clean_room_name(data.get('name')),
+    )
     db.session.add(room)
     db.session.commit()
-    return jsonify({'code': room.code, 'game': game.slug, 'settings': settings})
+    return jsonify({
+        'code': room.code,
+        'name': room.name or f'{game.name} {room.code[:4]}',
+        'game': game.slug,
+        'settings': settings,
+    })
 
 
 @app.route('/api/rooms/<code>/join', methods=['POST'])
@@ -719,6 +787,10 @@ def api_join_room(code):
         MatchPlayer.match_id == match.id, identity_filter
     ).first()
     if existing is None:
+        # A 1:1 room is only 1:1 if a third person is turned away.
+        present = [p for p in match.players if p.left_at is None]
+        if len(present) >= room.game.max_players:
+            return jsonify({'error': 'room is full'}), 400
         db.session.add(MatchPlayer(
             match_id=match.id,
             user_id=request.user.id if request.user else None,
@@ -727,7 +799,13 @@ def api_join_room(code):
         ))
         db.session.commit()
 
-    return jsonify({'match_id': match.id, 'room_code': room.code, 'game': room.game.slug})
+    return jsonify({
+        'match_id': match.id,
+        'room_code': room.code,
+        'game': room.game.slug,
+        'name': room.name or f'{room.game.name} {room.code[:4]}',
+        'game_name': room.game.name,
+    })
 
 
 # -------------------------

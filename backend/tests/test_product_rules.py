@@ -46,8 +46,8 @@ def test_games_are_split_into_social_and_competitive(tmp_path):
     games = module.app.test_client().get("/api/games").get_json()
     by_slug = {g["slug"]: g for g in games}
 
-    assert by_slug["textchat"]["category"] == "social", "text chat is a social channel, not a contest"
-    assert by_slug["ffa"]["category"] == "social"
+    assert by_slug["groupchat"]["category"] == "social", "text chat is a social channel, not a contest"
+    assert by_slug["groupchat"]["category"] == "social"
     assert by_slug["pushups"]["category"] == "competitive"
     assert by_slug["rapbattle"]["category"] == "competitive"
     # Facial Symmetry and Mog were the same idea; they are one game now.
@@ -70,7 +70,7 @@ def test_competitive_games_cannot_be_entered_by_room_code(tmp_path):
 def test_social_games_can_still_use_rooms(tmp_path):
     module = load(tmp_path)
     host = user_client(module, "social_host")
-    response = host.post("/api/rooms", json={"game_slug": "textchat"})
+    response = host.post("/api/rooms", json={"game_slug": "groupchat"})
     assert response.status_code == 200, response.get_data(as_text=True)
 
 
@@ -120,7 +120,7 @@ def test_an_empty_room_is_cleaned_up_after_a_minute(tmp_path):
     """Nobody should browse into a room that everyone abandoned."""
     module = load(tmp_path)
     host = user_client(module, "cleanup_host")
-    code = host.post("/api/rooms", json={"game_slug": "textchat"}).get_json()["code"]
+    code = host.post("/api/rooms", json={"game_slug": "groupchat"}).get_json()["code"]
     host.post(f"/api/rooms/{code}/join")
 
     with module.app.app_context():
@@ -142,7 +142,7 @@ def test_guests_can_open_a_social_channel(tmp_path):
     module = load(tmp_path)
     client, _ = guest_client(module)
 
-    response = client.post("/api/rooms", json={"game_slug": "textchat"})
+    response = client.post("/api/rooms", json={"game_slug": "groupchat"})
 
     assert response.status_code == 200, response.get_data(as_text=True)
     assert response.get_json()["code"]

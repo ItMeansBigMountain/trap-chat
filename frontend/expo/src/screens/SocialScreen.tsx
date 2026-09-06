@@ -16,10 +16,13 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  Dimensions,
 } from 'react-native';
 import { useApp } from '../context/AppContext';
 import api from '../services/api';
 import { GameSlug } from '../types';
+
+const SCREEN_HEIGHT = Dimensions.get('window').height;
 
 interface Line {
   id: string;
@@ -28,10 +31,8 @@ interface Line {
   system?: boolean;
 }
 
-const SOCIAL_CHANNEL: GameSlug = 'textchat' as GameSlug;
-
 export function SocialScreen() {
-  const { state, enterSocial, leaveMatch } = useApp();
+  const { state, enterSocial, leaveMatch, cancelSearch } = useApp();
   const match = state.currentMatch;
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -51,15 +52,27 @@ export function SocialScreen() {
     setError(null);
     setLines([]);
     setConnecting(true);
+    // Finish the throw so the old chat leaves the screen instead of hanging
+    // half-swiped while the request is in flight.
+    Animated.timing(drag, {
+      toValue: -SCREEN_HEIGHT,
+      duration: 160,
+      useNativeDriver: true,
+    }).start();
     try {
-      await enterSocial(SOCIAL_CHANNEL);
+      await enterSocial(state.socialMode as GameSlug);
     } catch (err: any) {
       setError(err?.message ?? 'Could not find anyone right now');
     } finally {
       setConnecting(false);
       drag.setValue(0);
     }
-  }, [enterSocial, drag]);
+  }, [enterSocial, drag, state.socialMode]);
+
+  const nextRef = useRef(next);
+  useEffect(() => {
+    nextRef.current = next;
+  }, [next]);
 
   // Swipe up to skip. A button does the same thing, because a swipe is
   // awkward with a mouse and this has to work in a desktop browser too.
@@ -71,7 +84,7 @@ export function SocialScreen() {
       },
       onPanResponderRelease: (_e, g) => {
         if (g.dy < -110) {
-          next();
+          nextRef.current();
         } else {
           Animated.spring(drag, { toValue: 0, useNativeDriver: true }).start();
         }
@@ -104,6 +117,28 @@ export function SocialScreen() {
     setLines((prev) => [...prev, { id: `${Date.now()}`, from: me, text }]);
     setDraft('');
   };
+
+  if (connecting) {
+    return (
+      <View style={styles.empty}>
+        <ActivityIndicator color="#818cf8" size="large" />
+        <Text style={styles.emptyTitle}>Searching</Text>
+        <Text style={styles.emptyBody}>
+          Looking for {state.socialMode === 'chat1v1' ? 'someone to talk to' : 'a group to drop into'}.
+        </Text>
+        <TouchableOpacity
+          style={styles.cancel}
+          onPress={() => {
+            setConnecting(false);
+            cancelSearch();
+            drag.setValue(0);
+          }}
+        >
+          <Text style={styles.cancelText}>Cancel</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   if (!match) {
     return (
@@ -217,5 +252,7 @@ const styles = StyleSheet.create({
   emptyBody: { color: '#9ca3af', textAlign: 'center', marginTop: 10, lineHeight: 20 },
   error: { color: '#f87171', marginTop: 14, textAlign: 'center' },
   cta: { marginTop: 26, backgroundColor: '#6366f1', paddingVertical: 16, paddingHorizontal: 54, borderRadius: 16 },
+  cancel: { marginTop: 24, paddingVertical: 13, paddingHorizontal: 34, borderRadius: 14, backgroundColor: '#171b24' },
+  cancelText: { color: '#f87171', fontWeight: '800' },
   ctaText: { color: '#fff', fontWeight: '900', fontSize: 17 },
 });

@@ -17,6 +17,18 @@ import {
   GameSlug,
 } from '../types';
 
+// What /api/rooms actually returns when browsing, which is not the Room
+// database row: it carries occupancy and a display name.
+export interface SocialRoom {
+  code: string;
+  name: string;
+  game: GameSlug;
+  game_name: string;
+  player_count: number;
+  max_players: number;
+  players: { display_name: string }[];
+}
+
 const API_BASE = process.env.EXPO_PUBLIC_API_URL;
 const SOCKET_URL = process.env.EXPO_PUBLIC_SOCKET_URL || API_BASE;
 
@@ -101,8 +113,11 @@ class ApiService {
     return result;
   }
 
-  async guest(): Promise<GuestSession> {
-    const result = await this.request<GuestSession>('/api/auth/guest', { method: 'POST' });
+  async guest(displayName?: string): Promise<GuestSession> {
+    const result = await this.request<GuestSession>('/api/auth/guest', {
+      method: 'POST',
+      body: JSON.stringify({ display_name: displayName ?? '' }),
+    });
     this.setGuestSession(result.guest_session_id);
     return result;
   }
@@ -133,15 +148,18 @@ class ApiService {
     return this.request('/api/matches/quick', { method: 'POST', body: JSON.stringify(request) });
   }
 
-  async createRoom(gameSlug: GameSlug, settings: MatchSettings): Promise<{ code: string; game: GameSlug; settings: MatchSettings }> {
-    return this.request('/api/rooms', { method: 'POST', body: JSON.stringify({ game_slug: gameSlug, settings }) });
+  async createRoom(gameSlug: GameSlug, settings: MatchSettings, name?: string): Promise<{ code: string; name: string; game: GameSlug; settings: MatchSettings }> {
+    return this.request('/api/rooms', {
+      method: 'POST',
+      body: JSON.stringify({ game_slug: gameSlug, settings, name: name ?? '' }),
+    });
   }
 
-  async listRooms(): Promise<Room[]> {
+  async listRooms(): Promise<SocialRoom[]> {
     return this.request('/api/rooms');
   }
 
-  async joinRoom(code: string): Promise<{ match_id: number; room_code: string; game: GameSlug }> {
+  async joinRoom(code: string): Promise<{ match_id: number; room_code: string; game: GameSlug; name?: string; game_name?: string }> {
     return this.request(`/api/rooms/${code}/join`, { method: 'POST' });
   }
 

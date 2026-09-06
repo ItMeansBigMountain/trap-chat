@@ -14,6 +14,8 @@ interface AppState {
   isSearching: boolean;
   searchGame: GameSlug | null;
   location: { lat: number; lng: number } | null;
+  // Which shape of social chat "Random" should look for next.
+  socialMode: 'chat1v1' | 'groupchat';
 }
 
 const initialState: AppState = {
@@ -23,6 +25,7 @@ const initialState: AppState = {
   isSearching: false,
   searchGame: null,
   location: null,
+  socialMode: 'chat1v1',
 };
 
 // ── Actions ───────────────────────────────────────────────────────
@@ -32,6 +35,7 @@ type Action =
   | { type: 'SET_MATCH'; payload: Match | null }
   | { type: 'SET_SEARCHING'; payload: { isSearching: boolean; game: GameSlug | null } }
   | { type: 'SET_LOCATION'; payload: { lat: number; lng: number } }
+  | { type: 'SET_SOCIAL_MODE'; payload: AppState['socialMode'] }
   | { type: 'LOGOUT' };
 
 function reducer(state: AppState, action: Action): AppState {
@@ -46,6 +50,8 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, isSearching: action.payload.isSearching, searchGame: action.payload.game };
     case 'SET_LOCATION':
       return { ...state, location: action.payload };
+    case 'SET_SOCIAL_MODE':
+      return { ...state, socialMode: action.payload };
     case 'LOGOUT':
       return { ...state, auth: { status: 'unauthenticated' }, currentMatch: null };
     default:
@@ -59,7 +65,7 @@ interface AppContextValue {
   // Auth
   login: (username: string, password: string) => Promise<void>;
   register: (username: string, email: string | undefined, password: string) => Promise<void>;
-  guest: () => Promise<void>;
+  guest: (displayName?: string) => Promise<void>;
   logout: () => Promise<void>;
   // Location
   requestLocation: () => Promise<void>;
@@ -70,8 +76,10 @@ interface AppContextValue {
   cancelSearch: () => void;
   // Rooms
   createRoom: (gameSlug: GameSlug) => Promise<string>;
+  createNamedRoom: (gameSlug: GameSlug, name: string) => Promise<string>;
   joinRoomByCode: (code: string) => Promise<void>;
   enterSocial: (gameSlug: GameSlug) => Promise<void>;
+  setSocialMode: (mode: AppState['socialMode']) => void;
   forfeit: () => void;
   submitResult: (matchId: number, result: GameResult) => Promise<void>;
   // Match
@@ -163,8 +171,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     resyncSocket(dispatch);
   }, []);
 
-  const guest = useCallback(async () => {
-    const session = await api.guest();
+  const guest = useCallback(async (displayName?: string) => {
+    const session = await api.guest(displayName);
     dispatch({ type: 'SET_AUTH', payload: { status: 'guest', session } });
     resyncSocket(dispatch);
   }, []);
@@ -234,7 +242,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   // Rooms: create a room and enter it, or join someone else's by code. Both
   // end in the same place as matchmaking, an active match with a room code.
-  const enterMatch = useCallback((matchId: number, roomCode: string, gameSlug: GameSlug) => {
+  const enterMatch = useCallback((matchId: number, roomCode: string, gameSlug: GameSlug, roomName?: string) => {
     dispatch({ type: 'SET_MATCH', payload: {
       id: matchId,
       room_code: roomCode,
@@ -242,27 +250,39 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       status: 'active',
       created_at: new Date().toISOString(),
       settings: {},
-      game: { id: 0, slug: gameSlug, name: gameSlug, max_players: 20, is_1v1: false, default_time_sec: 0, category: 'social' }
+      game: { id: 0, slug: gameSlug, name: roomName ?? gameSlug, max_players: 20, is_1v1: false, default_time_sec: 0, category: 'social' }
     }});
     dispatch({ type: 'SET_SEARCHING', payload: { isSearching: false, game: null } });
     api.joinMatch(matchId);
   }, []);
 
+  // Open a room under a chosen name and step straight into it.
+  const createNamedRoom = useCallback(async (gameSlug: GameSlug, name: string) => {
+    const room = await api.createRoom(gameSlug, {}, name);
+    const joined = await api.joinRoom(room.code);
+    enterMatch(joined.match_id, joined.room_code, joined.game, joined.name);
+    return room.code;
+  }, [enterMatch]);
+
   const createRoom = useCallback(async (gameSlug: GameSlug) => {
     const room = await api.createRoom(gameSlug, {});
     const joined = await api.joinRoom(room.code);
-    enterMatch(joined.match_id, joined.room_code, joined.game);
+    enterMatch(joined.match_id, joined.room_code, joined.game, joined.name);
     return room.code;
   }, [enterMatch]);
 
   const joinRoomByCode = useCallback(async (code: string) => {
     const joined = await api.joinRoom(code.trim().toUpperCase());
-    enterMatch(joined.match_id, joined.room_code, joined.game);
+    enterMatch(joined.match_id, joined.room_code, joined.game, joined.name);
   }, [enterMatch]);
 
   // Social: drop into any open channel that is not the one just left, and
   // start a fresh one when there is nowhere to go. This is what "next" does,
   // so skipping must never dead-end on an empty lobby.
+  const setSocialMode = useCallback((mode: AppState['socialMode']) => {
+    dispatch({ type: 'SET_SOCIAL_MODE', payload: mode });
+  }, []);
+
   const enterSocial = useCallback(async (gameSlug: GameSlug) => {
     const leavingCode = state.currentMatch?.room_code;
     if (state.currentMatch) {
@@ -275,7 +295,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     );
     const target = candidate ?? (await api.createRoom(gameSlug, {}));
     const joined = await api.joinRoom(target.code);
-    enterMatch(joined.match_id, joined.room_code, joined.game);
+    enterMatch(joined.match_id, joined.room_code, joined.game, joined.name);
   }, [enterMatch, state.currentMatch]);
 
   // Leaving a ranked match early is a forfeit; the server settles it.
@@ -311,7 +331,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       requestLocation,
       fetchGames,
       startSearch, cancelSearch, submitResult,
-      createRoom, joinRoomByCode, enterSocial, forfeit,
+      createRoom, createNamedRoom, joinRoomByCode, enterSocial, setSocialMode, forfeit,
       joinMatch, leaveMatch,
     }}>
       {children}

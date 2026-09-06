@@ -9,6 +9,7 @@ export function AuthScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [guestName, setGuestName] = useState('');
 
   const submit = async () => {
     setSubmitting(true);
@@ -28,7 +29,7 @@ export function AuthScreen() {
   const enterAsGuest = async () => {
     setSubmitting(true);
     try {
-      await guest();
+      await guest(guestName.trim() || undefined);
     } catch (error) {
       Alert.alert('Guest mode unavailable', error instanceof Error ? error.message : 'Please try again.');
     } finally {
@@ -51,9 +52,12 @@ export function AuthScreen() {
           <Text style={styles.linkText}>{mode === 'register' ? 'Already have an account? Sign in' : 'Need an account? Create one'}</Text>
         </TouchableOpacity>
         <View style={styles.divider}><View style={styles.dividerLine} /><Text style={styles.dividerText}>OR</Text><View style={styles.dividerLine} /></View>
+        {/* GUESTS PICK A NAME TOO */}
+        <TextInput accessibilityLabel="Guest name" autoCapitalize="none" autoCorrect={false} editable={!submitting} maxLength={20} onChangeText={setGuestName} onSubmitEditing={enterAsGuest} placeholder="Pick a name (optional)" placeholderTextColor="#71717a" style={styles.input} value={guestName} />
         <TouchableOpacity accessibilityRole="button" disabled={submitting} onPress={enterAsGuest} style={styles.secondary}>
           <Text style={styles.secondaryText}>Continue as guest</Text>
         </TouchableOpacity>
+        <Text style={styles.guestNote}>A short code is added so your name stays unique.</Text>
       </View>
     </View>
   );
@@ -67,6 +71,7 @@ const styles = StyleSheet.create({
   primary: { alignItems: 'center', backgroundColor: '#4f46e5', borderRadius: 10, minHeight: 50, justifyContent: 'center', marginTop: 4 },
   primaryText: { color: '#fff', fontSize: 16, fontWeight: '700' }, disabled: { opacity: 0.65 },
   link: { alignItems: 'center', padding: 16 }, linkText: { color: '#a5b4fc', fontSize: 14 },
+  guestNote: { color: '#71717a', fontSize: 12, marginTop: 10, textAlign: 'center' },
   divider: { alignItems: 'center', flexDirection: 'row', gap: 10, marginBottom: 16 }, dividerLine: { backgroundColor: '#3f3f46', flex: 1, height: 1 }, dividerText: { color: '#71717a', fontSize: 12 },
   secondary: { alignItems: 'center', borderColor: '#52525b', borderRadius: 10, borderWidth: 1, minHeight: 50, justifyContent: 'center' }, secondaryText: { color: '#fff', fontSize: 16, fontWeight: '700' },
 });
