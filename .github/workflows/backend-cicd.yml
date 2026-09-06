@@ -95,6 +95,32 @@ jobs:
     runs-on: ubuntu-latest
     environment: backend-prod
     steps:
+      # ---------------------------------------------------------------
+      # APPROVAL GATE for the backend deploy
+      #
+      # The real gate is the GitHub Environment `backend-prod` named in
+      # `environment:` above. Required reviewers live in repo settings, not
+      # in YAML, so this file cannot switch them on by itself:
+      #
+      #   Settings -> Environments -> backend-prod
+      #     -> Required reviewers -> add ItMeansBigMountain -> Save
+      #
+      # Until that is set, GitHub auto-creates the environment with NO
+      # protection and this stage runs unattended.
+      #
+      # If you would rather keep the approver in version control, uncomment
+      # the step below instead. It pauses the run and waits for ItMeansBigMountain
+      # to approve in an issue it opens. It needs `issues: write` added to
+      # the workflow's `permissions:` block.
+      #
+      # - name: Wait for ItMeansBigMountain to approve
+      #   uses: trstringer/manual-approval@v1
+      #   with:
+      #     secret: ${{ github.TOKEN }}
+      #     approvers: ItMeansBigMountain
+      #     minimum-approvals: 1
+      #     issue-title: "Approve the backend deploy for ${{ github.sha }}"
+      # ---------------------------------------------------------------
       - name: Azure login
         uses: azure/login@v2
         with:
