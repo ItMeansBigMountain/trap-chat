@@ -179,6 +179,32 @@ guards them.
   time with `az containerapp show`. Do not replace this with a hardcoded
   URL or a hand-set repo variable.
 
+## Matchmaking, and why it kept breaking
+
+Two players stuck on Searching has been the most persistent bug in this
+project. Every cause was different, so check these before assuming a new one:
+
+- **Every path that adds a player must end at `start_if_ready`.** The path
+  that hands back a match you are already in once skipped it, so a complete
+  pair sat on `waiting` and nobody was ever told to start.
+- **Only count players who are present.** Counting people who had left made
+  a room holding one live player and one ghost look full.
+- **A dropped socket is not a decision to leave.** Socket.IO reconnects on
+  any blip and a backgrounded tab is cut off, so treating a disconnect as
+  leaving pulled players out of their own queue. A disconnect only settles a
+  match that is already **active**; an abandoned queue is handled by
+  `QUEUE_TIMEOUT_MINUTES`.
+- **A reconnect must re-join the room.** Room membership is per socket
+  session and a reconnect gets a new one, so `match_start` was broadcast to a
+  room the client had silently dropped out of. The client remembers the match
+  it belongs in and re-joins on every connect.
+- **Reading the queue and writing to it is serialised** by
+  `MATCHMAKING_LOCK`, or two callers arriving together both find it empty and
+  both open a match nobody else can see.
+
+Asking to queue again is also the recovery path: it returns an
+already-started match, so missing the `match_start` broadcast is survivable.
+
 ## Gameplay and scoring
 
 - **Reps are counted in the player's browser** from MediaPipe pose landmarks.
@@ -210,6 +236,7 @@ run again against the live deployment.
 | `backend/tests/` | Backend logic, 49 tests |
 | `frontend/expo/e2e/rep_counter.py` | Counting rules, driven in a browser with synthetic joints |
 | `frontend/expo/e2e/smoke.py` | Every navigation path, all 20 ordered page transitions |
+| `frontend/expo/e2e/ranked_match.py` | Two browsers queueing into one ranked match |
 | `backend/e2e/api_smoke.py` | The deployed HTTP surface end to end |
 
 `api_smoke.py` takes `--include-scoring`, which is used only in the build
