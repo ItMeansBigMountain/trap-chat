@@ -70,6 +70,48 @@ else:
     CORS(app, supports_credentials=True)
 
 
+# Login is the only endpoint worth guessing at, so attempts per caller are
+# capped. Held in memory, which is sound while the backend is one replica; more
+# than one would need this in shared storage to be a real limit.
+LOGIN_MAX_ATTEMPTS = 10
+LOGIN_WINDOW_SECONDS = 300
+_LOGIN_ATTEMPTS = {}
+_RATE_LIMIT_LOCK = threading.Lock()
+
+
+def reset_rate_limits():
+    """Used by tests, which would otherwise inherit each other's counters."""
+    with _RATE_LIMIT_LOCK:
+        _LOGIN_ATTEMPTS.clear()
+
+
+def caller_key():
+    forwarded = request.headers.get('X-Forwarded-For', '')
+    # Container Apps sits behind a proxy, so the client address is the first
+    # entry in the forwarded chain rather than the socket peer.
+    return (forwarded.split(',')[0].strip() or request.remote_addr or 'unknown')
+
+
+def rate_limited(bucket):
+    """Record an attempt and report how long to wait, or None to proceed."""
+    now = time.time()
+    key = (bucket, caller_key())
+    with _RATE_LIMIT_LOCK:
+        attempts = [t for t in _LOGIN_ATTEMPTS.get(key, []) if now - t < LOGIN_WINDOW_SECONDS]
+        if len(attempts) >= LOGIN_MAX_ATTEMPTS:
+            _LOGIN_ATTEMPTS[key] = attempts
+            return int(LOGIN_WINDOW_SECONDS - (now - attempts[0])) + 1
+        attempts.append(now)
+        _LOGIN_ATTEMPTS[key] = attempts
+    return None
+
+
+def clear_rate_limit(bucket):
+    """A successful sign-in means this caller is not the one guessing."""
+    with _RATE_LIMIT_LOCK:
+        _LOGIN_ATTEMPTS.pop((bucket, caller_key()), None)
+
+
 def cookie_options():
     cross_origin = bool(FRONTEND_ORIGIN)
     return {
@@ -356,6 +398,38 @@ def start_if_ready(match, game):
     return True
 
 
+# Rate the fastest credible athlete at two reps a second and give the clock a
+# few seconds of slack. Anything past that did not happen.
+MAX_REPS_PER_SECOND = 2
+CLOCK_SLACK_SECONDS = 5
+
+
+def validate_result(game, data):
+    """Return a reason to reject this result, or None if it is plausible.
+
+    The check is deliberately generous. It is not trying to spot a good player
+    from a great one, only to keep a number typed into the console out of the
+    leaderboard.
+    """
+    if not isinstance(data, dict):
+        return 'result must be an object'
+
+    score = data.get('score')
+    if score is None:
+        return None  # A result without a score never reaches the leaderboard.
+    if isinstance(score, bool) or not isinstance(score, (int, float)):
+        return 'score must be a number'
+    if score < 0:
+        return 'score cannot be negative'
+
+    if game is not None and game.slug in REP_COUNTED_GAMES:
+        window = (game.default_time_sec or 60) + CLOCK_SLACK_SECONDS
+        ceiling = window * MAX_REPS_PER_SECOND
+        if score > ceiling:
+            return f'score of {score} is not possible in {game.default_time_sec}s'
+    return None
+
+
 def gen_room_code():
     return uuid.uuid4().hex[:8].upper()
 
@@ -386,6 +460,9 @@ DEFAULT_GAMES = [
 
 # Slugs that existed before the catalog was reorganised. They stay in the table
 # so old matches keep their foreign key, but they are never offered again.
+# Games whose score is a rep count, so a per-second ceiling applies.
+REP_COUNTED_GAMES = {'pushups', 'squats'}
+
 REPLACED_GAMES = {'symmetry': 'looks', 'mog': 'looks', 'textchat': 'chat1v1', 'ffa': 'groupchat'}
 
 
@@ -495,6 +572,13 @@ def static_files(path):
 # -------------------------
 @app.route('/api/auth/register', methods=['POST'])
 def api_register():
+    retry_after = rate_limited('register')
+    if retry_after is not None:
+        return jsonify({
+            'error': 'too many sign-up attempts, try again shortly',
+            'retry_after': retry_after,
+        }), 429
+
     data = request.get_json() or {}
     username = (data.get('username') or '').strip()
     email = (data.get('email') or '').strip() or None
@@ -524,12 +608,20 @@ def api_register():
 
 @app.route('/api/auth/login', methods=['POST'])
 def api_login():
+    retry_after = rate_limited('login')
+    if retry_after is not None:
+        return jsonify({
+            'error': 'too many sign-in attempts, try again shortly',
+            'retry_after': retry_after,
+        }), 429
+
     data = request.get_json() or {}
     username = (data.get('username') or '').strip()
     password = data.get('password') or ''
     u = User.query.filter_by(username=username).first()
     if not u or not u.check_password(password):
         return jsonify({'error': 'invalid credentials'}), 401
+    clear_rate_limit('login')
     token = u.to_token()
     # Returned in the body as well as the cookie: this frontend is on a
     # different site, so the cookie is third-party and privacy-respecting
@@ -886,6 +978,16 @@ def api_submit_result(match_id):
         mp = MatchPlayer.query.filter_by(match_id=match_id, guest_session_id=gs).first()
     if not mp:
         return jsonify({'error': 'not a player in this match'}), 403
+
+    # A result decides the ladder, so it cannot be taken on trust: the counting
+    # runs in the player's own browser and anything there can be edited.
+    if mp.result_json:
+        return jsonify({'error': 'a result was already submitted for this match'}), 400
+
+    error = validate_result(match.game, data)
+    if error:
+        return jsonify({'error': error}), 400
+
     mp.result_json = json.dumps(data)
     db.session.commit()
 

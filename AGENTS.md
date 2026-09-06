@@ -179,6 +179,47 @@ guards them.
   time with `az containerapp show`. Do not replace this with a hardcoded
   URL or a hand-set repo variable.
 
+## Gameplay and scoring
+
+- **Reps are counted in the player's browser** from MediaPipe pose landmarks.
+  The counting rules live in `frontend/expo/src/services/repCounter.ts` with
+  no camera or MediaPipe dependency, so they can be driven with synthetic
+  joints. A rep is the full travel down and back up, counted on the way up.
+  Separate down and up thresholds give hysteresis; a single threshold turns
+  pose noise into dozens of reps. The descent must also take time, which is
+  what stops jitter counting.
+- **MediaPipe is loaded from a CDN at runtime, never bundled.** Its package
+  ships a dynamic import Metro cannot parse, which fails the whole web build.
+- **The server does not trust a submitted score.** Counting happens in a
+  browser, so anything there can be edited. `validate_result` rejects
+  negatives, non-numbers, and rep counts beyond two a second for the round.
+  A result can be submitted once: both results are broadcast when a match
+  ends, so a second submission would let someone see the opponent's number
+  and then beat it.
+- **Login and registration are rate limited** per caller, in memory. That
+  holds while the backend is one replica; more than one needs shared storage
+  for it to be a real limit.
+
+## Testing
+
+Unit tests and both smoke suites run before anything ships, and the suites
+run again against the live deployment.
+
+| Suite | What it covers |
+|---|---|
+| `backend/tests/` | Backend logic, 49 tests |
+| `frontend/expo/e2e/rep_counter.py` | Counting rules, driven in a browser with synthetic joints |
+| `frontend/expo/e2e/smoke.py` | Every navigation path, all 20 ordered page transitions |
+| `backend/e2e/api_smoke.py` | The deployed HTTP surface end to end |
+
+Tests share one imported app module and therefore one database, so
+`backend/tests/conftest.py` resets the rate limiter and clears the queue
+between tests. Without that, matchmaking assertions fail only when the whole
+suite runs.
+
+**HTTP 200 is not a working app.** The post-deployment suites exist because
+the site once returned 200 while pointing at a test backend.
+
 ## Secrets
 
 - Never commit secrets, and never print secret values into logs or terminal

@@ -101,6 +101,45 @@ def main() -> int:
     requeue = a.post(f"{base}/api/matches/quick", json={"game_slug": "squats"}, timeout=60).json()
     check("re-queueing returns the started match", requeue.get("status") == "active", str(requeue.get("status")))
 
+    # --- SCORING AND THE LADDER ---------------------------------------
+    scorer = requests.Session()
+    reg2 = scorer.post(
+        f"{base}/api/auth/register",
+        json={"username": f"scorer{stamp}", "password": "Str0ng-Pass!1"},
+        timeout=60,
+    )
+    scorer.headers["Authorization"] = f"Bearer {reg2.json()['token']}"
+    rival = guest(base, "rival")
+    ranked = scorer.post(f"{base}/api/matches/quick", json={"game_slug": "pushups"}, timeout=60).json()
+    rival.post(f"{base}/api/matches/quick", json={"game_slug": "pushups"}, timeout=60)
+    ranked_id = ranked["match_id"]
+
+    cheat = scorer.post(f"{base}/api/matches/{ranked_id}/submit", json={"score": 90000}, timeout=60)
+    check("an impossible score is refused", cheat.status_code == 400, cheat.text[:120])
+
+    real = scorer.post(f"{base}/api/matches/{ranked_id}/submit", json={"score": 21}, timeout=60)
+    check("a real score is accepted", real.status_code == 200, real.text[:120])
+
+    again = scorer.post(f"{base}/api/matches/{ranked_id}/submit", json={"score": 99}, timeout=60)
+    check("a score cannot be resubmitted", again.status_code == 400, again.text[:120])
+
+    board = requests.get(f"{base}/api/leaderboard/pushups", timeout=60).json()
+    mine = [row for row in board if row["username"] == f"scorer{stamp}"]
+    check("the score reaches the leaderboard", bool(mine) and mine[0]["score"] == 21, str(mine[:1]))
+
+    # --- ABUSE --------------------------------------------------------
+    throttled = False
+    for _ in range(14):
+        attempt = requests.post(
+            f"{base}/api/auth/login",
+            json={"username": f"scorer{stamp}", "password": "definitely-wrong"},
+            timeout=60,
+        )
+        if attempt.status_code == 429:
+            throttled = True
+            break
+    check("password guessing is throttled", throttled)
+
     # --- REALTIME TRANSPORT -------------------------------------------
     handshake = requests.get(f"{base}/socket.io/?EIO=4&transport=polling", timeout=60)
     check("socket.io handshake works", handshake.status_code == 200, str(handshake.status_code))
