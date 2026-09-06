@@ -79,6 +79,8 @@ jobs:
         with:
           context: backend
           push: true
+          build-args: |
+            GIT_SHA=${{ github.sha }}
           tags: |
             ${{ env.IMAGE }}:${{ github.sha }}
             ${{ env.IMAGE }}:latest
@@ -151,17 +153,18 @@ jobs:
         run: |
           fqdn=$(az containerapp show --name "$CONTAINER_APP_NAME" --resource-group "$RESOURCE_GROUP" --query properties.configuration.ingress.fqdn -o tsv)
           echo "url=https://${fqdn}" >> "$GITHUB_OUTPUT"
-          echo "Checking https://${fqdn}/api/health"
-          for i in $(seq 1 10); do
-            if curl --fail --max-time 20 "https://${fqdn}/api/health"; then
-              echo
+          echo "Waiting for ${GITHUB_SHA} to serve at https://${fqdn}/api/health"
+          for i in $(seq 1 40); do
+            served=$(curl -sf --max-time 20 "https://${fqdn}/api/health"               | python3 -c "import json,sys; print(json.load(sys.stdin).get('version',''))" 2>/dev/null || echo "")
+            if [ "$served" = "$GITHUB_SHA" ]; then
+              echo "this build is live"
               echo "- Backend: https://${fqdn}/api/health" >> "$GITHUB_STEP_SUMMARY"
               exit 0
             fi
-            echo "attempt $i failed, retrying in 15s"
+            echo "attempt $i: serving '${served:-nothing}', want ${GITHUB_SHA}"
             sleep 15
           done
-          echo "::error::backend health check never returned success"
+          echo "::error::the new revision never started serving"
           exit 1
 
       # EXERCISE THE DEPLOYED API FOR REAL

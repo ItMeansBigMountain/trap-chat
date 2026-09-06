@@ -1,8 +1,13 @@
 FROM python:3.12-slim
 
+# Which commit this image was built from. The deploy pipeline waits
+# until /api/health reports it, so tests cannot run against the
+# revision that was serving a moment ago.
+ARG GIT_SHA=unknown
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PORT=8080
+    PORT=8080 \
+    GIT_SHA=$GIT_SHA
 
 WORKDIR /app
 COPY requirements.txt .

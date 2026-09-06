@@ -15,12 +15,14 @@ def test_api_health_reports_database_ready(tmp_path):
     response = app.test_client().get("/api/health")
 
     assert response.status_code == 200
-    assert response.get_json() == {
-        "ok": True,
-        "service": "trap-chat-backend",
-        "storage": "sqlite",
-        "productionReadyStorage": True,
-    }
+    # Asserted field by field rather than as a whole dict: health grows over
+    # time, and an exact match makes every addition a failing test.
+    body = response.get_json()
+    assert body["ok"] is True
+    assert body["service"] == "trap-chat-backend"
+    assert body["storage"] == "sqlite"
+    assert body["productionReadyStorage"] is True
+    assert "version" in body, "deploys are waited on by version, so it must be reported"
 
 
 def test_games_endpoint_returns_seeded_games(tmp_path):

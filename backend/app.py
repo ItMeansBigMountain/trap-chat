@@ -141,6 +141,10 @@ def health():
     return jsonify({
         'ok': True,
         'service': 'trap-chat-backend',
+        # The commit this build came from. A deploy can then be waited on
+        # rather than assumed: a health check alone passes on the revision
+        # that was already serving.
+        'version': os.environ.get('GIT_SHA', 'unknown'),
         **_storage_metadata(),
     })
 
