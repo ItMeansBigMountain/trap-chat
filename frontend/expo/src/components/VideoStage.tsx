@@ -71,7 +71,7 @@ export function VideoStage({
             </>
           ) : (
             <>
-              <ActivityIndicator color="#818cf8" />
+              <ActivityIndicator color="#FE2C55" />
               <Text style={styles.waitText}>
                 {state === 'requesting-media'
                   ? 'Allow camera and microphone'
@@ -107,20 +107,20 @@ export function VideoStage({
 }
 
 const styles = StyleSheet.create({
-  stage: { flex: 1, backgroundColor: '#000', borderRadius: 16, overflow: 'hidden', position: 'relative' },
+  stage: { flex: 1, backgroundColor: '#000', borderRadius: 8, overflow: 'hidden', position: 'relative' },
   waiting: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, paddingHorizontal: 24 },
   waitIcon: { fontSize: 34 },
-  waitText: { color: '#9ca3af', fontSize: 13, textAlign: 'center' },
+  waitText: { color: '#a1a1a1', fontSize: 13, textAlign: 'center' },
   selfWrap: {
     position: 'absolute',
     right: 12,
     top: 12,
     width: 88,
     height: 118,
-    borderRadius: 12,
+    borderRadius: 8,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: '#1f2430',
+    borderColor: '#2a2a2a',
     backgroundColor: '#000',
   },
   controls: { position: 'absolute', bottom: 12, left: 12, flexDirection: 'row', gap: 8 },

@@ -143,7 +143,7 @@ export function MatchScreen() {
           value={draft}
           onChangeText={setDraft}
           placeholder="Message"
-          placeholderTextColor="#6b7280"
+          placeholderTextColor="#a1a1a1"
           onSubmitEditing={send}
           returnKeyType="send"
         />
@@ -159,27 +159,27 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0b0f19', paddingTop: 52 },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, marginBottom: 12 },
   gameName: { color: '#fff', fontSize: 22, fontWeight: '700' },
-  sub: { color: '#9ca3af', fontSize: 13, marginTop: 2 },
+  sub: { color: '#a1a1a1', fontSize: 13, marginTop: 2 },
   leaveBtn: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8, backgroundColor: '#1f2937' },
-  leaveText: { color: '#f87171', fontWeight: '600' },
+  leaveText: { color: '#FE2C55', fontWeight: '600' },
   codeBox: {
     marginHorizontal: 20,
     marginBottom: 14,
     padding: 16,
-    borderRadius: 12,
+    borderRadius: 8,
     backgroundColor: '#111827',
     alignItems: 'center',
   },
-  codeLabel: { color: '#6b7280', fontSize: 11, letterSpacing: 1.5, marginBottom: 4 },
-  codeNote: { color: '#6b7280', fontSize: 11, marginTop: 8, textAlign: 'center', lineHeight: 15 },
-  code: { color: '#818cf8', fontSize: 28, fontWeight: '800', letterSpacing: 3 },
+  codeLabel: { color: '#a1a1a1', fontSize: 11, letterSpacing: 1.5, marginBottom: 4 },
+  codeNote: { color: '#a1a1a1', fontSize: 11, marginTop: 8, textAlign: 'center', lineHeight: 15 },
+  code: { color: '#FE2C55', fontSize: 28, fontWeight: '800', letterSpacing: 3 },
   chat: { flex: 1, marginHorizontal: 20 },
   chatContent: { paddingBottom: 12 },
-  empty: { color: '#6b7280', fontStyle: 'italic', marginTop: 12 },
+  empty: { color: '#a1a1a1', fontStyle: 'italic', marginTop: 12 },
   line: { marginBottom: 8 },
-  message: { color: '#e5e7eb', fontSize: 15 },
-  from: { color: '#818cf8', fontWeight: '700' },
-  system: { color: '#6b7280', fontSize: 13, fontStyle: 'italic' },
+  message: { color: '#ffffff', fontSize: 15 },
+  from: { color: '#FE2C55', fontWeight: '700' },
+  system: { color: '#a1a1a1', fontSize: 13, fontStyle: 'italic' },
   composer: { flexDirection: 'row', padding: 16, gap: 10, borderTopWidth: 1, borderTopColor: '#1f2937' },
   input: {
     flex: 1,
@@ -189,6 +189,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
   },
-  sendBtn: { backgroundColor: '#6366f1', borderRadius: 10, paddingHorizontal: 20, justifyContent: 'center' },
+  sendBtn: { backgroundColor: '#FE2C55', borderRadius: 10, paddingHorizontal: 20, justifyContent: 'center' },
   sendText: { color: '#fff', fontWeight: '700' },
 });

@@ -19,15 +19,15 @@ import time
 from playwright.sync_api import sync_playwright, Page
 
 DEFAULT_TARGET = "http://127.0.0.1:8100/"
-PAGES = ["Random", "Browse", "Competitive", "Leaderboards", "Profile"]
+PAGES = ["For You", "Browse", "Competitive", "Leaderboards", "Profile"]
 
-# The side nav label is not always the page name.
-NAV_LABELS = {"Profile": "Profile & settings"}
+# Nav labels match the page names now that both layouts use one list.
+NAV_LABELS: dict[str, str] = {}
 
 # What proves a page actually rendered. Matching on visible copy rather than
 # test ids keeps these honest: if the page is blank the assertion fails.
 PAGE_MARKERS = {
-    "Random": ["Swipe up to skip", "Drop into a channel", "Searching"],
+    "For You": ["Swipe up to skip", "Drop into a channel", "Searching"],
     "Browse": ["JOIN BY CODE", "START A ROOM"],
     "Competitive": ["Ranked matchmaking"],
     "Leaderboards": ["No scores yet", "Rap Battle"],
@@ -82,10 +82,12 @@ class Smoke:
         self.page.wait_for_timeout(500)
 
     def goto(self, name: str) -> None:
-        # The header title and the nav link share a label, so aim at the last
-        # match: the drawer renders after the header.
-        self.open_nav()
-        self.page.get_by_text(NAV_LABELS.get(name, name), exact=True).last.click()
+        # Nav lives in the bottom tab bar on a phone and the sidebar on the
+        # web, and both are always on screen, so the drawer is not involved.
+        # aria-label is the only thing that distinguishes a tab from the page
+        # title, which can carry the same words.
+        self.close_nav()
+        self.page.locator(f'[aria-label="{NAV_LABELS.get(name, name)}"]').last.click()
         self.page.wait_for_timeout(1400)
 
     def sign_in_as_guest(self, display_name: str = "smoke", attempts: int = 5) -> None:
@@ -196,6 +198,33 @@ def run_for(smoke: Smoke) -> None:
     smoke.check("no console errors", not smoke.console_errors, "; ".join(smoke.console_errors[:2]))
 
 
+def run_desktop(smoke: Smoke) -> None:
+    """The web layout is a separate tree, not a reflow of the phone one: a
+    persistent sidebar instead of a tab bar and a drawer. Nothing the mobile
+    pass proves carries over, so it gets walked too."""
+    page = smoke.page
+    page.goto(TARGET, wait_until="networkidle", timeout=90000)
+    page.wait_for_timeout(2500)
+    smoke.sign_in_as_guest("web")
+
+    body = smoke.body()
+    smoke.check("web: sidebar shows every nav entry",
+                all(name in body for name in PAGES),
+                body[:120].replace("\n", " | "))
+    smoke.check("web: no hamburger on the sidebar layout",
+                page.locator('[aria-label="Open menu"]').count() == 0)
+
+    for name in PAGES:
+        smoke.goto(name)
+        text = smoke.body()
+        smoke.check(f"web: {name} renders",
+                    any(marker in text for marker in PAGE_MARKERS[name]),
+                    text[:110].replace("\n", " | "))
+
+    smoke.check("web: no console errors", not smoke.console_errors,
+                "; ".join(smoke.console_errors[:2]))
+
+
 def main() -> int:
     global TARGET
     TARGET = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_TARGET
@@ -215,6 +244,15 @@ def main() -> int:
         smoke = Smoke(context.new_page())
         try:
             run_for(smoke)
+
+            print("\n--- desktop layout ---", flush=True)
+            wide = browser.new_context(
+                viewport={"width": 1440, "height": 900},
+                permissions=["camera", "microphone"],
+            )
+            desktop_smoke = Smoke(wide.new_page())
+            desktop_smoke.results = smoke.results
+            run_desktop(desktop_smoke)
         finally:
             browser.close()
 

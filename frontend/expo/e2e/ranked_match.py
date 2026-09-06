@@ -24,8 +24,8 @@ def guest(pg, name):
     pg.get_by_text("Continue as guest", exact=True).click(); pg.wait_for_timeout(4500)
 
 def to_competitive(smoke_pg):
-    smoke_pg.locator('[aria-label="Open menu"]').first.click(); smoke_pg.wait_for_timeout(800)
-    smoke_pg.get_by_text("Competitive", exact=True).last.click(); smoke_pg.wait_for_timeout(1500)
+    # Nav is the bottom tab bar now, always on screen, so no drawer to open.
+    smoke_pg.locator('[aria-label="Competitive"]').last.click(); smoke_pg.wait_for_timeout(1500)
 
 with sync_playwright() as p:
     b=p.chromium.launch(args=["--use-fake-ui-for-media-stream","--use-fake-device-for-media-stream"])
@@ -67,6 +67,8 @@ with sync_playwright() as p:
     else:
         check("a lone queue shows it is still counting", re.search(r"rating . \d+s", early) is not None,
               early[:90].replace("\n"," | "))
+        check("a lone queue names who is queued", "Queued as" in early and f"rc{t}" in early,
+              early[:110].replace(chr(10)," | "))
         solo.wait_for_timeout(14000); late=solo.inner_text("body")
         check("a lone queue explains why nothing happens", "Nobody else is queued" in late,
               late[:150].replace("\n"," | "))

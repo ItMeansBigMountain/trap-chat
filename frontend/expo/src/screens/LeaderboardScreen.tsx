@@ -60,7 +60,7 @@ export function LeaderboardScreen() {
 
       <ScrollView style={styles.list} contentContainerStyle={styles.listContent}>
         {loading ? (
-          <ActivityIndicator color="#818cf8" style={{ marginTop: 24 }} />
+          <ActivityIndicator color="#FE2C55" style={{ marginTop: 24 }} />
         ) : error ? (
           <Text style={styles.error}>{error}</Text>
         ) : rows.length === 0 ? (
@@ -82,27 +82,27 @@ export function LeaderboardScreen() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#08090d' },
+  root: { flex: 1, backgroundColor: '#000000' },
   tabsWrap: { flexGrow: 0 },
   tabs: { paddingHorizontal: 16, paddingVertical: 10, gap: 8 },
-  tab: { paddingHorizontal: 16, paddingVertical: 9, borderRadius: 999, backgroundColor: '#12151c' },
-  tabActive: { backgroundColor: '#4f46e5' },
-  tabText: { color: '#9ca3af', fontWeight: '700', fontSize: 13 },
+  tab: { paddingHorizontal: 16, paddingVertical: 9, borderRadius: 999, backgroundColor: '#121212' },
+  tabActive: { backgroundColor: '#FE2C55' },
+  tabText: { color: '#a1a1a1', fontWeight: '700', fontSize: 13 },
   tabTextActive: { color: '#fff' },
   list: { flex: 1 },
   listContent: { paddingHorizontal: 18, paddingBottom: 40 },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#12151c',
-    borderRadius: 12,
+    backgroundColor: '#121212',
+    borderRadius: 8,
     paddingVertical: 14,
     paddingHorizontal: 16,
     marginBottom: 8,
   },
-  rank: { color: '#818cf8', fontWeight: '900', width: 34, fontSize: 15 },
+  rank: { color: '#FE2C55', fontWeight: '900', width: 34, fontSize: 15 },
   name: { color: '#fff', flex: 1, fontWeight: '600' },
-  score: { color: '#e5e7eb', fontWeight: '800' },
-  empty: { color: '#6b7280', fontStyle: 'italic', marginTop: 20, lineHeight: 20 },
-  error: { color: '#f87171', marginTop: 20 },
+  score: { color: '#ffffff', fontWeight: '800' },
+  empty: { color: '#a1a1a1', fontStyle: 'italic', marginTop: 20, lineHeight: 20 },
+  error: { color: '#FE2C55', marginTop: 20 },
 });

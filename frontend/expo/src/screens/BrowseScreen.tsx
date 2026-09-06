@@ -71,7 +71,7 @@ export function BrowseScreen({ onEntered }: { onEntered?: () => void }) {
           autoCapitalize="characters"
           autoCorrect={false}
           placeholder="e.g. 7F46927E"
-          placeholderTextColor="#6b7280"
+          placeholderTextColor="#a1a1a1"
           onSubmitEditing={() => run(() => joinRoomByCode(code))}
         />
         <TouchableOpacity
@@ -90,7 +90,7 @@ export function BrowseScreen({ onEntered }: { onEntered?: () => void }) {
         value={newName}
         onChangeText={setNewName}
         placeholder="Name it whatever you want"
-        placeholderTextColor="#6b7280"
+        placeholderTextColor="#a1a1a1"
       />
       <View style={styles.modeRow}>
         {social.map((game) => (
@@ -122,7 +122,7 @@ export function BrowseScreen({ onEntered }: { onEntered?: () => void }) {
       </View>
 
       {loading ? (
-        <ActivityIndicator color="#818cf8" style={{ marginTop: 16 }} />
+        <ActivityIndicator color="#FE2C55" style={{ marginTop: 16 }} />
       ) : rooms.length === 0 ? (
         <Text style={styles.empty}>Nothing open right now. Start one above.</Text>
       ) : (
@@ -152,27 +152,27 @@ export function BrowseScreen({ onEntered }: { onEntered?: () => void }) {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#08090d' },
+  root: { flex: 1, backgroundColor: '#000000' },
   content: { padding: 18, paddingBottom: 44 },
-  section: { color: '#6b7280', fontSize: 10, letterSpacing: 1.5, fontWeight: '700', marginTop: 18, marginBottom: 9 },
+  section: { color: '#a1a1a1', fontSize: 10, letterSpacing: 1.5, fontWeight: '700', marginTop: 18, marginBottom: 9 },
   row: { flexDirection: 'row', gap: 10 },
-  input: { flex: 1, backgroundColor: '#12151c', color: '#fff', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12 },
+  input: { flex: 1, backgroundColor: '#121212', color: '#fff', borderRadius: 8, paddingHorizontal: 14, paddingVertical: 12 },
   fullInput: { flex: 0 },
-  primary: { backgroundColor: '#6366f1', borderRadius: 12, paddingHorizontal: 22, justifyContent: 'center' },
-  primaryWide: { backgroundColor: '#6366f1', borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginTop: 10 },
+  primary: { backgroundColor: '#FE2C55', borderRadius: 8, paddingHorizontal: 22, justifyContent: 'center' },
+  primaryWide: { backgroundColor: '#FE2C55', borderRadius: 8, paddingVertical: 14, alignItems: 'center', marginTop: 10 },
   primaryText: { color: '#fff', fontWeight: '800' },
   disabled: { opacity: 0.45 },
   modeRow: { flexDirection: 'row', gap: 8, marginTop: 10 },
-  mode: { paddingHorizontal: 16, paddingVertical: 9, borderRadius: 999, backgroundColor: '#12151c' },
-  modeActive: { backgroundColor: '#4f46e5' },
-  modeText: { color: '#9ca3af', fontWeight: '700', fontSize: 13 },
+  mode: { paddingHorizontal: 16, paddingVertical: 9, borderRadius: 999, backgroundColor: '#121212' },
+  modeActive: { backgroundColor: '#FE2C55' },
+  modeText: { color: '#a1a1a1', fontWeight: '700', fontSize: 13 },
   modeTextActive: { color: '#fff' },
   openHeader: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' },
-  refresh: { color: '#818cf8', fontWeight: '700', marginTop: 18, marginBottom: 9 },
-  room: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#12151c', borderRadius: 12, padding: 15, marginBottom: 9 },
+  refresh: { color: '#FE2C55', fontWeight: '700', marginTop: 18, marginBottom: 9 },
+  room: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#121212', borderRadius: 8, padding: 15, marginBottom: 9 },
   roomName: { color: '#fff', fontWeight: '700', fontSize: 15 },
-  roomMeta: { color: '#6b7280', fontSize: 11, marginTop: 3 },
-  roomAction: { color: '#818cf8', fontWeight: '800' },
-  empty: { color: '#6b7280', fontStyle: 'italic' },
-  error: { color: '#f87171', marginBottom: 10 },
+  roomMeta: { color: '#a1a1a1', fontSize: 11, marginTop: 3 },
+  roomAction: { color: '#FE2C55', fontWeight: '800' },
+  empty: { color: '#a1a1a1', fontStyle: 'italic' },
+  error: { color: '#FE2C55', marginBottom: 10 },
 });

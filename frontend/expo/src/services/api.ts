@@ -117,6 +117,12 @@ class ApiService {
   }
 
   async guest(displayName?: string): Promise<GuestSession> {
+    // Sign out of any account first. login() clears the guest session, so this
+    // has to clear the token to match: without it a stored token still won
+    // every request, "Continue as guest" quietly left you signed in as your
+    // account, and a second tab that looked like a guest was really the same
+    // person -- which cannot be matched against itself.
+    this.setToken(null);
     const result = await this.request<GuestSession>('/api/auth/guest', {
       method: 'POST',
       body: JSON.stringify({ display_name: displayName ?? '' }),

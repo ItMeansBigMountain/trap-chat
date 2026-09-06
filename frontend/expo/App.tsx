@@ -14,7 +14,7 @@ import { ScreenFrame, PageName } from './src/components/ScreenFrame';
 import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 
 const TITLES: Record<PageName, string> = {
-  Random: 'Random',
+  'For You': 'For You',
   Browse: 'Browse',
   Competitive: 'Competitive',
   Leaderboards: 'Leaderboards',
@@ -23,12 +23,12 @@ const TITLES: Record<PageName, string> = {
 
 function AppShell() {
   const { state } = useApp();
-  const [page, setPage] = useState<PageName>('Random');
+  const [page, setPage] = useState<PageName>('For You');
 
   if (state.auth.status === 'loading') {
     return (
       <View style={styles.loading}>
-        <ActivityIndicator color="#6366f1" size="large" />
+        <ActivityIndicator color="#FE2C55" size="large" />
         <Text style={styles.loadingText}>Loading Trap Chat…</Text>
       </View>
     );
@@ -53,8 +53,8 @@ function AppShell() {
 
   return (
     <ScreenFrame title={TITLES[page]} active={page} onNavigate={setPage}>
-      {page === 'Random' && <SocialScreen />}
-      {page === 'Browse' && <BrowseScreen onEntered={() => setPage('Random')} />}
+      {page === 'For You' && <SocialScreen />}
+      {page === 'Browse' && <BrowseScreen onEntered={() => setPage('For You')} />}
       {page === 'Competitive' && <CompetitiveScreen />}
       {page === 'Leaderboards' && <LeaderboardScreen />}
       {page === 'Profile' && <ProfileScreen />}
@@ -71,6 +71,6 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  loading: { flex: 1, backgroundColor: '#08090d', justifyContent: 'center', alignItems: 'center' },
+  loading: { flex: 1, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' },
   loadingText: { color: '#a1a1aa', marginTop: 12 },
 });

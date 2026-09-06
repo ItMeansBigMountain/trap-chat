@@ -156,7 +156,7 @@ export function RankedMatchScreen() {
         <Camera stream={localStream} onReady={attachTracker} />
         {tracker === 'loading' && (
           <View style={styles.overlay}>
-            <ActivityIndicator color="#818cf8" />
+            <ActivityIndicator color="#FE2C55" />
             <Text style={styles.overlayText}>Loading the rep counter…</Text>
           </View>
         )}
@@ -191,26 +191,26 @@ export function RankedMatchScreen() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#08090d', paddingTop: 48, paddingHorizontal: 18, paddingBottom: 18, alignItems: 'center' },
+  root: { flex: 1, backgroundColor: '#000000', paddingTop: 48, paddingHorizontal: 18, paddingBottom: 18, alignItems: 'center' },
   header: { flexDirection: 'row', alignItems: 'center', width: '100%', maxWidth: 460, marginBottom: 12 },
   game: { color: '#fff', fontSize: 21, fontWeight: '800' },
-  sub: { color: '#6b7280', fontSize: 12, marginTop: 2 },
-  clock: { color: '#a5b4fc', fontSize: 26, fontWeight: '900' },
-  clockLow: { color: '#f87171' },
+  sub: { color: '#a1a1a1', fontSize: 12, marginTop: 2 },
+  clock: { color: '#FE2C55', fontSize: 26, fontWeight: '900' },
+  clockLow: { color: '#FE2C55' },
   scores: { flexDirection: 'row', gap: 12, width: '100%', maxWidth: 460, marginBottom: 12 },
-  scoreBox: { flex: 1, backgroundColor: '#12151c', borderRadius: 14, paddingVertical: 12, alignItems: 'center' },
-  scoreLabel: { color: '#6b7280', fontSize: 10, letterSpacing: 1.4, fontWeight: '700' },
+  scoreBox: { flex: 1, backgroundColor: '#121212', borderRadius: 8, paddingVertical: 12, alignItems: 'center' },
+  scoreLabel: { color: '#a1a1a1', fontSize: 10, letterSpacing: 1.4, fontWeight: '700' },
   score: { color: '#fff', fontSize: 34, fontWeight: '900', marginTop: 2 },
-  cameraWrap: { flex: 1, width: '100%', maxWidth: 460, backgroundColor: '#000', borderRadius: 16, overflow: 'hidden', position: 'relative' },
+  cameraWrap: { flex: 1, width: '100%', maxWidth: 460, backgroundColor: '#000', borderRadius: 8, overflow: 'hidden', position: 'relative' },
   overlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', gap: 10, paddingHorizontal: 24 },
-  overlayText: { color: '#9ca3af', fontSize: 13, textAlign: 'center' },
+  overlayText: { color: '#a1a1a1', fontSize: 13, textAlign: 'center' },
   stageBadge: { position: 'absolute', left: 12, bottom: 12, paddingHorizontal: 14, paddingVertical: 7, borderRadius: 999, backgroundColor: 'rgba(17,20,28,0.85)' },
-  stageText: { color: '#a5b4fc', fontWeight: '900', fontSize: 12, letterSpacing: 1.5 },
+  stageText: { color: '#FE2C55', fontWeight: '900', fontSize: 12, letterSpacing: 1.5 },
   hint: { color: '#f59e0b', fontSize: 12, marginTop: 10, textAlign: 'center' },
   done: { width: '100%', maxWidth: 460, marginTop: 14, alignItems: 'center' },
   doneText: { color: '#fff', fontWeight: '700', marginBottom: 12, textAlign: 'center' },
-  leave: { backgroundColor: '#6366f1', borderRadius: 14, paddingVertical: 15, paddingHorizontal: 40 },
+  leave: { backgroundColor: '#FE2C55', borderRadius: 8, paddingVertical: 15, paddingHorizontal: 40 },
   leaveText: { color: '#fff', fontWeight: '800' },
-  forfeit: { width: '100%', maxWidth: 460, marginTop: 14, backgroundColor: '#171b24', borderRadius: 14, paddingVertical: 15, alignItems: 'center' },
-  forfeitText: { color: '#f87171', fontWeight: '800' },
+  forfeit: { width: '100%', maxWidth: 460, marginTop: 14, backgroundColor: '#1f1f1f', borderRadius: 8, paddingVertical: 15, alignItems: 'center' },
+  forfeitText: { color: '#FE2C55', fontWeight: '800' },
 });
