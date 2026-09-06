@@ -326,6 +326,26 @@ The colour is not borrowed:
   the product is. It previously used TikTok's offset chromatic split, which was
   the single most derivative thing in the app.
 
+## Startup, and why it felt slow
+
+Measured, not guessed. With the backend warm: the page arrives in 156ms and the
+bundle in 374ms, so the network was never the problem.
+
+- **First paint was 3.4 seconds** because `#root` was empty and nothing could
+  render until 1.17MB of JavaScript had parsed and booted. `public/index.html`
+  now paints a wordmark and a progress bar on the first byte of HTML; React
+  replaces it when it mounts. This does not make the app load faster, it stops
+  the load looking like a broken page.
+- **Hashed bundles were cached for 30 seconds.** `public/staticwebapp.config.json`
+  sets a year and `immutable` on `/_expo/static/*`, which is safe precisely
+  because the filename contains a content hash, and `no-cache` on index.html so
+  a deploy is picked up immediately.
+- The bundle is served brotli-compressed: 1.17MB becomes 292KB in transit.
+- **`min_replicas = 0` is deliberate.** The container scales to zero when idle,
+  so the first request after a quiet spell pays a cold start. Keeping one
+  replica alive would remove it and would also leave the free grant, so the
+  cold start stays until that trade is worth making.
+
 ## Testing
 
 Unit tests and both smoke suites run before anything ships, and the suites

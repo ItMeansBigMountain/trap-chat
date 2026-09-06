@@ -97,6 +97,30 @@ with sync_playwright() as p:
 
 
 
+    # Two clients that have each queued before. This is the shape the bug had:
+    # both had a queue of their own from an earlier attempt, so neither ever
+    # looked for the other and both were told they were the only one waiting.
+    def queue_then_requeue(page, game):
+        """Queue, cancel, queue again. Returns False if a real opponent was
+        already waiting, in which case there is no lonely queue to test."""
+        page.get_by_text(game, exact=True).click(); page.wait_for_timeout(4000)
+        if page.get_by_text("Cancel", exact=True).count() == 0:
+            return False
+        page.get_by_text("Cancel", exact=True).click(); page.wait_for_timeout(1500)
+        page.get_by_text(game, exact=True).click(); page.wait_for_timeout(4000)
+        return True
+
+    a = fresh_guest(f"qa{t}")
+    bb = fresh_guest(f"qb{t}")
+    if not queue_then_requeue(a, "Squats"):
+        print("SKIP  re-queue check: somebody was already queued for Squats", flush=True)
+    else:
+        queue_then_requeue(bb, "Squats")
+        bb.wait_for_timeout(5000); a.wait_for_timeout(3000)
+        check("two clients that both re-queued still pair",
+              "Ranked 1v1" in a.inner_text("body") and "Ranked 1v1" in bb.inner_text("body"),
+              ("A: " + a.inner_text("body")[:60] + " || B: " + bb.inner_text("body")[:60]).replace(chr(10), " | "))
+
     print("=== errors p1 ==="); [print("  ",x[:150]) for x in e1[:5]]
     print("=== errors p2 ==="); [print("  ",x[:150]) for x in e2[:5]]
     b.close()

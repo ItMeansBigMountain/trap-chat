@@ -858,10 +858,37 @@ def api_quick_match():
             .first()
         )
 
-        if existing is not None:
-            match = existing
-            # Someone returning after a disconnect is present again.
-            for player in match.players:
+        def find_opponent():
+            """A waiting room for this game that somebody else is sitting in."""
+            candidates = Match.query.filter_by(game_id=game.id, status='waiting').filter(
+                Match.created_at >= fresh_cutoff,
+                ~Match.players.any(identity_filter),
+            ).all()
+            # Only rooms with space, and never one everybody already left.
+            candidates = [c for c in candidates if 0 < len(present_players(c)) < game.max_players]
+            if not candidates:
+                return None
+            if game.category != COMPETITIVE:
+                return candidates[0]
+
+            # Competitive pairing feeds the ladder, so prefer an opponent near
+            # your rating rather than whoever queued first. Guests have no
+            # rating, so they sit at the default and pair with each other.
+            my_rating = request.user.rating if request.user else DEFAULT_RATING
+
+            def rating_gap(candidate):
+                ratings = [
+                    p.user.rating for p in present_players(candidate)
+                    if p.user is not None and p.user.rating is not None
+                ]
+                opponent = sum(ratings) / len(ratings) if ratings else DEFAULT_RATING
+                return abs(opponent - my_rating)
+
+            return min(candidates, key=rating_gap)
+
+        def rejoin(target):
+            """Someone returning after a disconnect is present again."""
+            for player in target.players:
                 is_me = (
                     player.user_id == request.user.id if request.user
                     else player.guest_session_id == guest_session
@@ -869,34 +896,43 @@ def api_quick_match():
                 if is_me and player.left_at is not None:
                     player.left_at = None
             db.session.commit()
+
+        waiting = None
+        # Whether this call still has to take a seat somewhere. Reusing a match
+        # you are already in does not; joining or opening one does.
+        needs_seat = False
+        if existing is not None and existing.status == 'active':
+            # A started match always wins: a client that missed the
+            # match_start broadcast recovers just by asking again.
+            match = existing
+            rejoin(match)
+        elif existing is not None and len(present_players(existing)) > 1:
+            # Already sharing a queue with someone. Nothing to improve on.
+            match = existing
+            rejoin(match)
+        elif existing is not None:
+            # A queue of your own that nobody else has joined. This must not
+            # stop you pairing: two players who had each queued once before
+            # then sat in separate empty queues forever, both being told they
+            # were the only one waiting, which is exactly what it looked like.
+            opponent = find_opponent()
+            if opponent is None:
+                match = existing
+                rejoin(match)
+            else:
+                # Abandon the empty one rather than leaving it to be offered
+                # to the next arrival as a room with a ghost in it.
+                for player in list(existing.players):
+                    db.session.delete(player)
+                db.session.delete(existing)
+                db.session.commit()
+                waiting = opponent
+                needs_seat = True
         else:
-            candidates = Match.query.filter_by(game_id=game.id, status='waiting').filter(
-                Match.created_at >= fresh_cutoff,
-                ~Match.players.any(identity_filter),
-            ).all()
-            # Only rooms with space, and never one everybody already left.
-            candidates = [c for c in candidates if 0 < len(present_players(c)) < game.max_players]
+            waiting = find_opponent()
+            needs_seat = True
 
-            # Competitive pairing feeds the ladder, so prefer an opponent near
-            # your rating rather than whoever queued first. Guests have no
-            # rating, so they sit at the default and pair with each other.
-            waiting = None
-            if candidates:
-                if game.category == COMPETITIVE:
-                    my_rating = request.user.rating if request.user else DEFAULT_RATING
-
-                    def rating_gap(candidate):
-                        ratings = [
-                            p.user.rating for p in present_players(candidate)
-                            if p.user is not None and p.user.rating is not None
-                        ]
-                        opponent = sum(ratings) / len(ratings) if ratings else DEFAULT_RATING
-                        return abs(opponent - my_rating)
-
-                    waiting = min(candidates, key=rating_gap)
-                else:
-                    waiting = candidates[0]
-
+        if needs_seat:
             if waiting is not None:
                 match = waiting
             else:
