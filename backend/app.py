@@ -1225,4 +1225,6 @@ def on_chat_message(data):
 # Main
 # -------------------------
 if __name__ == '__main__':
-    socketio.run(app, host='0.0.0.0', port=5000, debug=True)
+    # Same PORT the container uses, so a local run can stand in for the
+    # deployed backend without rebuilding the frontend against a new host.
+    socketio.run(app, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=True)

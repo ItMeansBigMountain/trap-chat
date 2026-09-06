@@ -201,6 +201,12 @@ project. Every cause was different, so check these before assuming a new one:
 - **Reading the queue and writing to it is serialised** by
   `MATCHMAKING_LOCK`, or two callers arriving together both find it empty and
   both open a match nobody else can see.
+- **A queue with nobody in it is not a stuck queue.** This one was reported as
+  a bug twice and was never a bug: two tabs of one browser share
+  `localStorage`, so they are one identity, and the server is right to refuse
+  to pair a player with themselves. The Competitive banner counts its wait and
+  says so after 15 seconds. Reproduce a real match with two browser
+  *contexts*, the way `e2e/ranked_match.py` does, not two tabs.
 
 Asking to queue again is also the recovery path: it returns an
 already-started match, so missing the `match_start` broadcast is survivable.

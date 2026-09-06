@@ -2,7 +2,7 @@
 // Ranked 1v1 only. There is no room code here on purpose: matchmaking pairs
 // you by rating, and that is what makes the leaderboard mean anything.
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -24,8 +24,20 @@ const ART: Record<string, { icon: string; blurb: string }> = {
 export function CompetitiveScreen() {
   const { state, startSearch, cancelSearch } = useApp();
   const [error, setError] = useState<string | null>(null);
+  const [waitedSeconds, setWaitedSeconds] = useState(0);
   const competitive = state.games.filter((g) => g.category === 'competitive');
   const isSearching = state.isSearching;
+
+  // A queue with nobody else in it looks identical to a broken one. Count the
+  // wait so it is visibly progressing, then explain what is actually needed.
+  useEffect(() => {
+    if (!isSearching) {
+      setWaitedSeconds(0);
+      return;
+    }
+    const tick = setInterval(() => setWaitedSeconds((s) => s + 1), 1000);
+    return () => clearInterval(tick);
+  }, [isSearching]);
 
   const queue = async (slug: GameSlug) => {
     setError(null);
@@ -42,8 +54,14 @@ export function CompetitiveScreen() {
         <View style={styles.queued}>
           <ActivityIndicator color="#818cf8" />
           <View style={{ flex: 1 }}>
-            <Text style={styles.queuedTitle}>Finding an opponent near your rating</Text>
-            <Text style={styles.queuedHint}>You will drop into the match automatically.</Text>
+            <Text style={styles.queuedTitle}>
+              Finding an opponent near your rating · {waitedSeconds}s
+            </Text>
+            <Text style={styles.queuedHint}>
+              {waitedSeconds < 15
+                ? 'You will drop into the match automatically.'
+                : 'Nobody else is queued for this game yet. To play against yourself, open the app in a different browser or a private window: two tabs of the same browser are one account, and you cannot be matched with yourself.'}
+            </Text>
           </View>
           <TouchableOpacity onPress={cancelSearch} style={styles.cancel}>
             <Text style={styles.cancelText}>Cancel</Text>
@@ -97,7 +115,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   queuedTitle: { color: '#fff', fontWeight: '700', fontSize: 14 },
-  queuedHint: { color: '#6b7280', fontSize: 11, marginTop: 3 },
+  queuedHint: { color: '#6b7280', fontSize: 11, marginTop: 3, lineHeight: 16 },
   cancel: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, backgroundColor: '#1b2030' },
   cancelText: { color: '#f87171', fontWeight: '700' },
   error: { color: '#f87171', marginBottom: 12 },

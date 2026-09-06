@@ -52,7 +52,27 @@ with sync_playwright() as p:
     check("the rep counter is present", "YOU" in b1 and "OPPONENT" in b1)
     p1.screenshot(path="/tmp/ranked.png", full_page=True)
 
-    print("\n=== errors p1 ==="); [print("  ",x[:150]) for x in e1[:5]]
+    # A queue nobody else is in looks exactly like a broken one. It has to say
+    # so, because two tabs of one browser are one account and never pair.
+    solo=b.new_context(viewport={"width":390,"height":844}, is_mobile=True, has_touch=True,
+                       permissions=["camera","microphone"]).new_page()
+    guest(solo,f"rc{t}")
+    to_competitive(solo)
+    solo.get_by_text("Rap Battle", exact=True).click(); solo.wait_for_timeout(3000)
+    early=solo.inner_text("body")
+    if "Ranked 1v1" in early:
+        # A real stranger was waiting. Nothing to assert about an empty queue,
+        # and calling that a failure would train everyone to ignore this file.
+        print("SKIP  the lone-queue checks: someone else was queued for Rap Battle", flush=True)
+    else:
+        check("a lone queue shows it is still counting", re.search(r"rating . \d+s", early) is not None,
+              early[:90].replace("\n"," | "))
+        solo.wait_for_timeout(14000); late=solo.inner_text("body")
+        check("a lone queue explains why nothing happens", "Nobody else is queued" in late,
+              late[:150].replace("\n"," | "))
+
+
+    print("=== errors p1 ==="); [print("  ",x[:150]) for x in e1[:5]]
     print("=== errors p2 ==="); [print("  ",x[:150]) for x in e2[:5]]
     b.close()
 print("\n"+"="*50)
