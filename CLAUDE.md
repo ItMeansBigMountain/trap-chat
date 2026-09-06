@@ -17,5 +17,10 @@ Key points, in short:
 - **Everything is in Central US** and inherits the resource group's region.
 - **Auth cannot rely on cookies**; they are third-party on this deployment.
   Bearer token for users, `X-Guest-Session` for guests.
+- **Reps are counted in the browser, so the server never trusts a score.**
+  Validation rejects anything not physically possible, and a result can only
+  be submitted once.
+- **Deploys wait for the new build to serve**, checked against the commit
+  reported by `/api/health`.
 - Multiple agents work here concurrently. Never force-push or overwrite work
   you did not write.

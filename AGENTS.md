@@ -212,10 +212,20 @@ run again against the live deployment.
 | `frontend/expo/e2e/smoke.py` | Every navigation path, all 20 ordered page transitions |
 | `backend/e2e/api_smoke.py` | The deployed HTTP surface end to end |
 
+`api_smoke.py` takes `--include-scoring`, which is used only in the build
+stage. Submitting a score writes a permanent leaderboard row, so running it
+against production would add a test account to the ladder on every deploy.
+
 Tests share one imported app module and therefore one database, so
 `backend/tests/conftest.py` resets the rate limiter and clears the queue
 between tests. Without that, matchmaking assertions fail only when the whole
 suite runs.
+
+**A deploy is proven, not assumed.** The image is stamped with the commit it
+was built from, `/api/health` reports it as `version`, and the pipeline waits
+until the version being served matches the one it just pushed. Without that
+the tests ran against the revision that was already serving, and a run of the
+previous build reported the new one as broken.
 
 **HTTP 200 is not a working app.** The post-deployment suites exist because
 the site once returned 200 while pointing at a test backend.
