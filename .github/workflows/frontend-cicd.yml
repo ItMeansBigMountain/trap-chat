@@ -1,32 +1,22 @@
 name: frontend CICD
 
-# Two stages, so the run shows two bubbles: Build, then Deploy behind a
-# manual approval gate.
-#
-#   Build  -> typecheck, export the web bundle, upload it as an artifact
-#   Deploy -> publish that exact bundle to Azure Static Web Apps and verify
-#
-# The approval gate is enforced by the GitHub Environment `frontend-prod`,
-# which must have at least one Required Reviewer configured under
-# Settings -> Environments. GitHub auto-creates an environment on first use
-# with NO protection rules, so without that one-time setup Deploy runs
-# unattended.
-#
-# Triggers:
-#   - push to main touching frontend/expo/  -> build, then gated deploy
-#   - pull request touching frontend/expo/  -> build only, never deploys
-#   - after a successful "infra CICD"       -> rebuild against the new backend
+# BUILDS AND SHIPS THE WEB APP
+# BUILD COMPILES, DEPLOY PUBLISHES
+# DEPLOY WAITS FOR APPROVAL
 
 on:
+  # PUSH TO MAIN DEPLOYS
   push:
     branches: [main]
     paths:
       - 'frontend/expo/**'
       - '.github/workflows/frontend-cicd.yml'
+  # PULL REQUESTS ONLY BUILD
   pull_request:
     paths:
       - 'frontend/expo/**'
       - '.github/workflows/frontend-cicd.yml'
+  # NEW INFRA TRIGGERS REBUILD
   workflow_run:
     workflows: ["infra CICD"]
     types: [completed]
@@ -36,6 +26,7 @@ on:
 permissions:
   contents: read
 
+# ONE FRONTEND DEPLOY AT A TIME
 concurrency:
   group: trap-chat-frontend-cicd
   cancel-in-progress: false
@@ -49,25 +40,30 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
-    # Never build off the back of a failed infra run.
+    # SKIP AFTER FAILED INFRA RUN
     if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     steps:
+      # FETCH THE SOURCE
       - uses: actions/checkout@v4
 
+      # INSTALL NODE, CACHE PACKAGES
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: frontend/expo/package-lock.json
 
+      # INSTALL EXACT LOCKED PACKAGES
       - name: Install dependencies
         working-directory: frontend/expo
         run: npm ci
 
+      # FAIL ON TYPE ERRORS
       - name: Typecheck
         working-directory: frontend/expo
         run: npx tsc --noEmit
 
+      # PROVE IT COMPILES, FAKE BACKEND
       - name: Build (pull request check only)
         if: github.event_name == 'pull_request'
         working-directory: frontend/expo
@@ -76,12 +72,15 @@ jobs:
           EXPO_PUBLIC_API_URL: https://backend.invalid
           EXPO_PUBLIC_SOCKET_URL: https://backend.invalid
 
+      # SIGN IN TO AZURE
       - name: Azure login
         if: github.event_name != 'pull_request'
         uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
+      # ASK AZURE THE REAL HOSTNAME
+      # NEVER SHIP A GUESSED URL
       - name: Resolve verified backend URL
         if: github.event_name != 'pull_request'
         id: backend_url
@@ -94,6 +93,7 @@ jobs:
           echo "url=https://${fqdn}" >> "$GITHUB_OUTPUT"
           echo "Backend URL: https://${fqdn}"
 
+      # BAKE BACKEND URL INTO BUNDLE
       - name: Export web build
         if: github.event_name != 'pull_request'
         working-directory: frontend/expo
@@ -102,6 +102,7 @@ jobs:
           EXPO_PUBLIC_API_URL: ${{ steps.backend_url.outputs.url }}
           EXPO_PUBLIC_SOCKET_URL: ${{ steps.backend_url.outputs.url }}
 
+      # HAND BUNDLE TO DEPLOY STAGE
       - name: Upload web bundle Artifact
         if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
@@ -113,29 +114,17 @@ jobs:
   deploy:
     name: Deploy
     needs: build
-    # Pull requests build but never deploy.
+    # PULL REQUESTS NEVER DEPLOY
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     environment: frontend-prod
     steps:
-      # ---------------------------------------------------------------
-      # APPROVAL GATE for the frontend deploy
+      # APPROVAL GATE, SET IN SETTINGS
+      # SETTINGS > ENVIRONMENTS > FRONTEND-PROD
+      # ADD ItMeansBigMountain AS REVIEWER
+      # UNSET MEANS DEPLOY RUNS UNATTENDED
       #
-      # The real gate is the GitHub Environment `frontend-prod` named in
-      # `environment:` above. Required reviewers live in repo settings, not
-      # in YAML, so this file cannot switch them on by itself:
-      #
-      #   Settings -> Environments -> frontend-prod
-      #     -> Required reviewers -> add ItMeansBigMountain -> Save
-      #
-      # Until that is set, GitHub auto-creates the environment with NO
-      # protection and this stage runs unattended.
-      #
-      # If you would rather keep the approver in version control, uncomment
-      # the step below instead. It pauses the run and waits for ItMeansBigMountain
-      # to approve in an issue it opens. It needs `issues: write` added to
-      # the workflow's `permissions:` block.
-      #
+      # OR UNCOMMENT TO GATE HERE
       # - name: Wait for ItMeansBigMountain to approve
       #   uses: trstringer/manual-approval@v1
       #   with:
@@ -143,21 +132,21 @@ jobs:
       #     approvers: ItMeansBigMountain
       #     minimum-approvals: 1
       #     issue-title: "Approve the frontend deploy for ${{ github.sha }}"
-      # ---------------------------------------------------------------
+
+      # SHIP EXACTLY WHAT WAS BUILT
       - uses: actions/download-artifact@v4
         with:
           name: trap-chat-web-bundle
           path: dist
 
+      # SIGN IN TO AZURE
       - name: Azure login
         uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      # Read the deployment token from Azure rather than a stored secret. The
-      # token belongs to the Static Web App instance, so recreating that app
-      # (a region change, for example) rotates it and any stored copy silently
-      # goes stale. Masked so it never appears in logs.
+      # READ TOKEN FROM AZURE, MASKED
+      # STORED COPIES GO STALE SILENTLY
       - name: Resolve Static Web App deployment token
         id: swa
         run: |
@@ -172,6 +161,7 @@ jobs:
           echo "::add-mask::$token"
           echo "token=$token" >> "$GITHUB_OUTPUT"
 
+      # UPLOAD BUNDLE TO AZURE
       - name: Deploy to Azure Static Web Apps
         uses: Azure/static-web-apps-deploy@v1
         with:
@@ -182,6 +172,7 @@ jobs:
           skip_app_build: true
           output_location: ''
 
+      # CONFIRM THE SITE ANSWERS
       - name: Verify frontend
         run: |
           hostname=$(az staticwebapp show --name "$STATIC_WEB_APP_NAME" --resource-group "$RESOURCE_GROUP" --query defaultHostname -o tsv)

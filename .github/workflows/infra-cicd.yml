@@ -1,20 +1,16 @@
 name: infra CICD
 
-# Pipeline shape: plan runs automatically on every infra change, then apply
-# waits behind a manual approval gate.
-#
-# IMPORTANT: the approval gate is enforced by the GitHub Environment named
-# `infra-prod-apply`. It must be configured with at least one Required
-# Reviewer (Settings -> Environments -> infra-prod-apply -> Required
-# reviewers). GitHub auto-creates an environment on first use with NO
-# protection rules, so without that one-time setup the apply job will run
-# unattended.
+# BUILDS AND CHANGES THE INFRASTRUCTURE
+# PLAN SHOWS IT, APPLY DOES IT
+# APPLY WAITS FOR APPROVAL
 
 on:
+  # PULL REQUESTS ONLY PLAN
   pull_request:
     paths:
       - 'infra/terraform/**'
       - '.github/workflows/infra-cicd.yml'
+  # PUSH TO MAIN APPLIES
   push:
     branches: [main]
     paths:
@@ -22,6 +18,7 @@ on:
       - '.github/workflows/infra-cicd.yml'
   workflow_dispatch:
     inputs:
+      # RECOVER A STUCK STATE LOCK
       force_unlock_id:
         description: Stale Terraform lock ID to recover after confirming no run is active
         type: string
@@ -32,6 +29,7 @@ permissions:
   contents: read
   pull-requests: write
 
+# ONE INFRA CHANGE AT A TIME
 concurrency:
   group: trap-chat-infra-cicd
   cancel-in-progress: false
@@ -56,7 +54,10 @@ jobs:
       run:
         working-directory: infra/terraform
     steps:
+      # FETCH THE SOURCE
       - uses: actions/checkout@v4
+
+      # FAIL EARLY ON MISSING CREDENTIALS
       - name: Preflight Azure service-account configuration
         shell: bash
         env:
@@ -69,20 +70,32 @@ jobs:
           for value in CLIENT TENANT SUBSCRIPTION CLIENT_SECRET AZURE_CREDENTIALS; do
             test -n "${!value}" || { echo "::error::$value is missing"; exit 1; }
           done
+
+      # SIGN IN TO AZURE
       - uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
           enable-AzPSSession: false
+
+      # INSTALL TERRAFORM
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.9.8
+
+      # REJECT UNFORMATTED TERRAFORM
       - name: Terraform fmt check
         run: terraform fmt -check -recursive
+
+      # LOAD PROVIDERS AND REMOTE STATE
       - name: Terraform init
         run: terraform init
+
+      # CLEAR A LOCK LEFT BEHIND
       - name: Recover explicitly identified stale Terraform lock
         if: github.event_name == 'workflow_dispatch' && inputs.force_unlock_id != ''
         run: terraform force-unlock -force "${{ inputs.force_unlock_id }}"
+
+      # ADOPT RESOURCES MADE OUTSIDE TERRAFORM
       - name: Import pre-existing Azure resources into Terraform state
         shell: bash
         run: |
@@ -94,10 +107,17 @@ jobs:
             timeout 5m terraform import -input=false -var-file=env/prod.tfvars \
               azurerm_static_web_app.frontend \
               "/subscriptions/${{ vars.AZURE_SUBSCRIPTION_ID }}/resourceGroups/rg-trap-chat-prod/providers/Microsoft.Web/staticSites/stapp-trap-chat-prod"
+
+      # CATCH CONFIGURATION ERRORS
       - name: Terraform validate
         run: terraform validate
+
+      # WORK OUT WHAT WOULD CHANGE
       - name: Terraform plan
         run: terraform plan -var-file=env/prod.tfvars -out=tfplan
+
+      # SHOW THE PLAN BEFORE APPROVING
+      # READ THIS FOR DESTROYS
       - name: Publish plan to run summary
         run: |
           {
@@ -107,6 +127,8 @@ jobs:
             terraform show -no-color tfplan
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # HAND PLAN TO APPLY STAGE
       - uses: actions/upload-artifact@v4
         with:
           name: trap-chat-terraform-plan
@@ -116,6 +138,7 @@ jobs:
   apply:
     name: Apply (requires approval)
     needs: plan
+    # PULL REQUESTS NEVER APPLY
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -124,24 +147,12 @@ jobs:
       run:
         working-directory: infra/terraform
     steps:
-      # ---------------------------------------------------------------
-      # APPROVAL GATE for the Terraform apply
+      # APPROVAL GATE, SET IN SETTINGS
+      # SETTINGS > ENVIRONMENTS > INFRA-PROD-APPLY
+      # ADD ItMeansBigMountain AS REVIEWER
+      # UNSET MEANS APPLY RUNS UNATTENDED
       #
-      # The real gate is the GitHub Environment `infra-prod-apply` named in
-      # `environment:` above. Required reviewers live in repo settings, not
-      # in YAML, so this file cannot switch them on by itself:
-      #
-      #   Settings -> Environments -> infra-prod-apply
-      #     -> Required reviewers -> add ItMeansBigMountain -> Save
-      #
-      # Until that is set, GitHub auto-creates the environment with NO
-      # protection and this stage runs unattended.
-      #
-      # If you would rather keep the approver in version control, uncomment
-      # the step below instead. It pauses the run and waits for ItMeansBigMountain
-      # to approve in an issue it opens. It needs `issues: write` added to
-      # the workflow's `permissions:` block.
-      #
+      # OR UNCOMMENT TO GATE HERE
       # - name: Wait for ItMeansBigMountain to approve
       #   uses: trstringer/manual-approval@v1
       #   with:
@@ -149,25 +160,33 @@ jobs:
       #     approvers: ItMeansBigMountain
       #     minimum-approvals: 1
       #     issue-title: "Approve the Terraform apply for ${{ github.sha }}"
-      # ---------------------------------------------------------------
+
+      # FETCH THE SOURCE
       - uses: actions/checkout@v4
+
+      # SIGN IN TO AZURE
       - uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
           enable-AzPSSession: false
+
+      # INSTALL TERRAFORM
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.9.8
+
+      # LOAD PROVIDERS AND REMOTE STATE
       - name: Terraform init
         run: terraform init
+
+      # COLLECT THE APPROVED PLAN
       - uses: actions/download-artifact@v4
         with:
           name: trap-chat-terraform-plan
           path: infra/terraform
-      # backend CICD can be mid-rollout on the same Container App. Azure
-      # rejects a second concurrent modification with 409
-      # ContainerAppOperationInProgress and that kills the whole apply, so
-      # wait for the in-flight operation to drain first.
+
+      # WAIT OUT ANY RUNNING DEPLOY
+      # AZURE REJECTS CONCURRENT CHANGES
       - name: Wait for Container App to be idle
         run: |
           for i in $(seq 1 60); do
@@ -181,8 +200,12 @@ jobs:
             esac
           done
           echo "::warning::Container App still provisioning after 10 minutes; attempting apply anyway"
+
+      # APPLY EXACTLY THE REVIEWED PLAN
       - name: Terraform apply
         run: terraform apply -auto-approve tfplan
+
+      # PRINT THE LIVE URLS
       - name: Publish endpoints to run summary
         run: |
           {

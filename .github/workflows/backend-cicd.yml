@@ -1,32 +1,22 @@
 name: backend CICD
 
-# Two stages, so the run shows two bubbles: Build, then Deploy behind a
-# manual approval gate.
-#
-#   Build  -> test, build the image, push it to GHCR
-#   Deploy -> roll the image out to Azure Container Apps and verify health
-#
-# The approval gate is enforced by the GitHub Environment `backend-prod`,
-# which must have at least one Required Reviewer configured under
-# Settings -> Environments. GitHub auto-creates an environment on first use
-# with NO protection rules, so without that one-time setup Deploy runs
-# unattended.
-#
-# Triggers:
-#   - push to main touching backend/  -> build, then gated deploy
-#   - pull request touching backend/  -> build only, never deploys
-#   - after a successful "infra CICD" -> redeploy onto new/changed infra
+# BUILDS AND SHIPS THE API
+# BUILD TESTS AND PUSHES IMAGE
+# DEPLOY WAITS FOR APPROVAL
 
 on:
+  # PUSH TO MAIN DEPLOYS
   push:
     branches: [main]
     paths:
       - 'backend/**'
       - '.github/workflows/backend-cicd.yml'
+  # PULL REQUESTS ONLY TEST
   pull_request:
     paths:
       - 'backend/**'
       - '.github/workflows/backend-cicd.yml'
+  # NEW INFRA TRIGGERS REDEPLOY
   workflow_run:
     workflows: ["infra CICD"]
     types: [completed]
@@ -37,6 +27,7 @@ permissions:
   contents: read
   packages: write
 
+# ONE BACKEND DEPLOY AT A TIME
 concurrency:
   group: trap-chat-backend-cicd
   cancel-in-progress: false
@@ -50,25 +41,30 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
-    # Never build off the back of a failed infra run.
+    # SKIP AFTER FAILED INFRA RUN
     if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     steps:
+      # FETCH THE SOURCE
       - uses: actions/checkout@v4
 
+      # INSTALL PYTHON
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
+      # INSTALL RUNTIME AND TEST DEPENDENCIES
       - name: Install dependencies
         working-directory: backend
         run: pip install --no-cache-dir -r requirements.txt pytest==8.3.5
 
+      # COMPILE CHECK, THEN RUN TESTS
       - name: Test
         working-directory: backend
         run: |
           python -m py_compile app.py
           python -m pytest tests/ -q
 
+      # SIGN IN TO THE REGISTRY
       - uses: docker/login-action@v3
         if: github.event_name != 'pull_request'
         with:
@@ -76,8 +72,8 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Tagged with the commit SHA so the deploy stage rolls out an immutable,
-      # traceable image rather than a moving tag.
+      # BUILD AND PUSH, SHA TAGGED
+      # IMMUTABLE TAG MAKES DEPLOYS TRACEABLE
       - uses: docker/build-push-action@v6
         if: github.event_name != 'pull_request'
         with:
@@ -90,29 +86,17 @@ jobs:
   deploy:
     name: Deploy
     needs: build
-    # Pull requests build but never deploy.
+    # PULL REQUESTS NEVER DEPLOY
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     environment: backend-prod
     steps:
-      # ---------------------------------------------------------------
-      # APPROVAL GATE for the backend deploy
+      # APPROVAL GATE, SET IN SETTINGS
+      # SETTINGS > ENVIRONMENTS > BACKEND-PROD
+      # ADD ItMeansBigMountain AS REVIEWER
+      # UNSET MEANS DEPLOY RUNS UNATTENDED
       #
-      # The real gate is the GitHub Environment `backend-prod` named in
-      # `environment:` above. Required reviewers live in repo settings, not
-      # in YAML, so this file cannot switch them on by itself:
-      #
-      #   Settings -> Environments -> backend-prod
-      #     -> Required reviewers -> add ItMeansBigMountain -> Save
-      #
-      # Until that is set, GitHub auto-creates the environment with NO
-      # protection and this stage runs unattended.
-      #
-      # If you would rather keep the approver in version control, uncomment
-      # the step below instead. It pauses the run and waits for ItMeansBigMountain
-      # to approve in an issue it opens. It needs `issues: write` added to
-      # the workflow's `permissions:` block.
-      #
+      # OR UNCOMMENT TO GATE HERE
       # - name: Wait for ItMeansBigMountain to approve
       #   uses: trstringer/manual-approval@v1
       #   with:
@@ -120,21 +104,19 @@ jobs:
       #     approvers: ItMeansBigMountain
       #     minimum-approvals: 1
       #     issue-title: "Approve the backend deploy for ${{ github.sha }}"
-      # ---------------------------------------------------------------
+
+      # SIGN IN TO AZURE
       - name: Azure login
         uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      # Pushing an image does not change what a running Container App serves:
-      # Azure never re-pulls a mutable tag on its own. Roll out the immutable
-      # per-commit tag so every deploy is a distinct, traceable revision.
+      # ROLL OUT THE NEW IMAGE
+      # AZURE NEVER RE-PULLS A TAG
       - name: Roll out image to Container App
         run: |
           az extension add --name containerapp --upgrade -y
-          # infra CICD can be mid-apply on the same Container App. Azure
-          # rejects a second concurrent modification with 409
-          # ContainerAppOperationInProgress, so wait for it to drain first.
+          # WAIT OUT ANY RUNNING OPERATION
           for i in $(seq 1 60); do
             state=$(az containerapp show --name "$CONTAINER_APP_NAME" \
               --resource-group "$RESOURCE_GROUP" \
@@ -145,10 +127,7 @@ jobs:
               *) break ;;
             esac
           done
-          # Right after an infra change the control plane can briefly answer
-          # "does not exist" for an app that demonstrably does, and it returns
-          # 409 while another operation drains. Both clear on their own, so
-          # retry rather than failing the deploy.
+          # RETRY THROUGH TRANSIENT AZURE ERRORS
           for attempt in 1 2 3 4 5; do
             if az containerapp update \
               --name "$CONTAINER_APP_NAME" \
@@ -163,6 +142,7 @@ jobs:
           echo "::error::could not roll out the image after 5 attempts"
           exit 1
 
+      # CONFIRM THE API ANSWERS
       - name: Verify backend health
         run: |
           fqdn=$(az containerapp show --name "$CONTAINER_APP_NAME" --resource-group "$RESOURCE_GROUP" --query properties.configuration.ingress.fqdn -o tsv)
