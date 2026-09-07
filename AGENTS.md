@@ -355,6 +355,29 @@ EMA smoothing on the probabilities. It is more robust to camera angle than
 geometry is, and it is the obvious next step -- but it needs a labelled
 training set of push-up and squat frames, which we would have to collect.
 
+## Shadow Boxing
+
+Same camera and same model as push-ups, read differently. A punch is not a
+rep, and counting one like the other does not work:
+
+- **The two arms are independent.** A rep counter has one state machine; this
+  has two, or a one-two combination reads as a single movement.
+- **Speed is the whole difference** between a punch and reaching for a glass.
+  The arm has to straighten inside 600ms, or it does not count.
+- **A punch has to be pulled back before it can be thrown again**, or holding
+  your arm out scores forever.
+- **The score is not the punch count.** Every ten unbroken punches raises the
+  multiplier by one, to a cap of five, and each punch is worth the multiplier
+  it lands on. Let two seconds pass and the combo resets to one. Sustained
+  output is the point, so a hundred punches in one run beats a hundred in
+  bursts.
+- **Its score ceiling is its own.** Punches times a multiplier is far above
+  any rep count, so `COMBO_SCORED_GAMES` is validated against five punches a
+  second at the maximum multiplier rather than the rep rule.
+
+`PoseTracker` owns the camera, the model and the frame loop and knows nothing
+about what the frames mean, which is what lets both games share all of it.
+
 ## Judged battles: what the machine decides and what it does not
 
 Rap Battle and Looks Battle have no objective score. Every real battle rap

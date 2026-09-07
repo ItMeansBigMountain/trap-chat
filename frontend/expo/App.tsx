@@ -11,6 +11,7 @@ import { MatchScreen } from './src/screens/MatchScreen';
 import { RankedMatchScreen } from './src/screens/RankedMatchScreen';
 import { RapBattleScreen } from './src/screens/RapBattleScreen';
 import { LooksBattleScreen } from './src/screens/LooksBattleScreen';
+import { ShadowBoxScreen } from './src/screens/ShadowBoxScreen';
 import { EXERCISES } from './src/services/repCounter';
 import { ScreenFrame, PageName } from './src/components/ScreenFrame';
 import { ModeProvider } from './src/hooks/useAccent';
@@ -75,6 +76,8 @@ function AppShell() {
       const slug = match.game?.slug ?? '';
       const screen = EXERCISES[slug] ? (
         <RankedMatchScreen />
+      ) : slug === 'shadowbox' ? (
+        <ShadowBoxScreen />
       ) : slug === 'rapbattle' ? (
         <RapBattleScreen />
       ) : slug === 'looks' ? (

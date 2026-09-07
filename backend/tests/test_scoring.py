@@ -131,3 +131,32 @@ def test_startup_drops_scores_the_rules_would_now_reject(tmp_path):
 
     board = module.app.test_client().get("/api/leaderboard/pushups").get_json()
     assert not [row for row in board if row["username"] == "legacy_cheater"], board
+
+
+def test_a_shadow_boxing_score_is_not_judged_by_the_rep_ceiling(tmp_path):
+    """Shadow boxing scores punches times a combo multiplier, so a good run is
+    far above what a rep count could be. Judging it by the rep rule would
+    reject legitimate scores."""
+    module = load(tmp_path)
+    one = account(module, "boxer")
+    two = account(module, "opponent_e")
+    match_id = matched_pair(module, one, two, slug="shadowbox")
+
+    # 250 punches at an average multiplier of two: a hard but possible minute.
+    response = one.post(f"/api/matches/{match_id}/submit", json={"score": 500})
+
+    assert response.status_code == 200, response.get_data(as_text=True)
+
+
+def test_an_impossible_shadow_boxing_score_is_still_rejected(tmp_path):
+    """It has its own ceiling, not no ceiling. Five punches a second at the
+    maximum multiplier is the most a minute can be worth."""
+    module = load(tmp_path)
+    one = account(module, "cheating_boxer")
+    two = account(module, "opponent_f")
+    match_id = matched_pair(module, one, two, slug="shadowbox")
+
+    response = one.post(f"/api/matches/{match_id}/submit", json={"score": 99999})
+
+    assert response.status_code == 400, response.get_data(as_text=True)
+    assert "not possible" in response.get_json()["error"]

@@ -4,6 +4,16 @@
 
 import { Platform } from 'react-native';
 import { ExerciseSpec, Landmark, RepCounter, RepUpdate } from './repCounter';
+import { PunchCounter, PunchUpdate } from './punchCounter';
+
+/**
+ * Anything that turns landmarks into a result. The tracker owns the camera,
+ * the model and the frame loop; what those frames mean is not its business,
+ * which is what lets shadow boxing reuse all of it.
+ */
+export interface PoseAnalyser<T> {
+  update(landmarks: Landmark[], now?: number): T;
+}
 
 // The model and wasm are fetched from Google's CDN on first use. They are a
 // few megabytes, so the caller should show that something is loading.
@@ -20,6 +30,7 @@ export type TrackerState = 'idle' | 'loading' | 'running' | 'failed';
 
 export interface TrackerHandlers {
   onRep?: (update: RepUpdate) => void;
+  onPunch?: (update: PunchUpdate) => void;
   onState?: (state: TrackerState, detail?: string) => void;
 }
 
@@ -49,22 +60,39 @@ export class PoseTracker {
   private landmarker: any = null;
   private raf: number | null = null;
   private video: HTMLVideoElement | null = null;
-  private counter: RepCounter | null = null;
+  private counter: PoseAnalyser<unknown> | null = null;
+  private emit: ((result: unknown) => void) | null = null;
   private handlers: TrackerHandlers = {};
   private running = false;
 
-  get reps(): number {
-    return this.counter?.reps ?? 0;
+  /** Count reps of an exercise. */
+  async start(video: HTMLVideoElement, spec: ExerciseSpec, handlers: TrackerHandlers): Promise<void> {
+    return this.run(video, new RepCounter(spec), handlers, (result) =>
+      handlers.onRep?.(result as RepUpdate),
+    );
   }
 
-  async start(video: HTMLVideoElement, spec: ExerciseSpec, handlers: TrackerHandlers): Promise<void> {
+  /** Count punches instead. Same camera, same model, different reading. */
+  async startPunches(video: HTMLVideoElement, handlers: TrackerHandlers): Promise<void> {
+    return this.run(video, new PunchCounter(), handlers, (result) =>
+      handlers.onPunch?.(result as PunchUpdate),
+    );
+  }
+
+  private async run(
+    video: HTMLVideoElement,
+    analyser: PoseAnalyser<unknown>,
+    handlers: TrackerHandlers,
+    emit: (result: unknown) => void,
+  ): Promise<void> {
     if (!poseSupported()) {
-      handlers.onState?.('failed', 'Rep counting needs a browser with a camera.');
+      handlers.onState?.('failed', 'This needs a browser with a camera.');
       return;
     }
     this.stop();
     this.video = video;
-    this.counter = new RepCounter(spec);
+    this.counter = analyser;
+    this.emit = emit;
     this.handlers = handlers;
     handlers.onState?.('loading');
 
@@ -104,7 +132,7 @@ export class PoseTracker {
         const result = this.landmarker.detectForVideo(video, performance.now());
         const landmarks: Landmark[] | undefined = result?.landmarks?.[0];
         if (landmarks?.length) {
-          this.handlers.onRep?.(this.counter.update(landmarks));
+          this.emit?.(this.counter.update(landmarks));
         }
       } catch {
         // A dropped frame is not worth ending the match over.

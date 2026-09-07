@@ -18,6 +18,7 @@ import { GameSlug } from '../types';
 const ART: Record<string, { icon: string; blurb: string }> = {
   pushups: { icon: '💪', blurb: 'Most reps in 60s' },
   squats: { icon: '🦵', blurb: 'Deep squat showdown' },
+  shadowbox: { icon: '🥊', blurb: 'Punches, and a combo multiplier' },
   rapbattle: { icon: '🎤', blurb: '60s freestyle battle' },
   looks: { icon: '📏', blurb: 'Symmetry and looksmaxx' },
 };

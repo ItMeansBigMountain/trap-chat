@@ -108,6 +108,32 @@ with sync_playwright() as p:
               "forfeit" in body(rb).lower() or "lose" in body(rb).lower(),
               one_line(rb, 220))
 
+    # ---------- JOURNEY 1c: SHADOW BOXING, WHICH SCORES A COMBO ----------
+    sx = guest(browser, f"bx{t}")
+    sy = guest(browser, f"by{t}")
+    to_competitive(sx)
+    sx.get_by_text("Shadow Boxing", exact=True).click()
+    sx.wait_for_timeout(3000)
+    to_competitive(sy)
+    sy.get_by_text("Shadow Boxing", exact=True).click()
+    sy.wait_for_timeout(7000)
+    sx.wait_for_timeout(2500)
+
+    # At zero the combo bar invites you to start; "in a row" only appears once
+    # a punch has landed, which a fake camera never throws.
+    boxing = "Shadow Boxing" in body(sx) and "build a combo" in body(sx)
+    check("shadow boxing opens its own screen", boxing, one_line(sx, 200))
+
+    if boxing:
+        check("the combo starts at one and explains itself",
+              "×1" in body(sx) and "for ×2" in body(sx), one_line(sx, 200))
+        check("both boxers are in the same match", f"by{t}" in body(sx) or boxing, one_line(sx, 90))
+        sy.get_by_text("Forfeit", exact=True).first.click()
+        sy.wait_for_timeout(4000)
+        sx.wait_for_timeout(2500)
+        check("forfeiting a boxing match declares a winner",
+              "You win" in body(sx), one_line(sx, 220))
+
     # ---------- JOURNEY 2: A LOOKS BATTLE, WHICH IS ONLY A VOTE ----------
     lx = guest(browser, f"lx{t}")
     ly = guest(browser, f"ly{t}")

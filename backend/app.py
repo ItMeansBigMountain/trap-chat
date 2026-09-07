@@ -499,6 +499,12 @@ def validate_result(game, data):
         ceiling = window * MAX_REPS_PER_SECOND
         if score > ceiling:
             return f'score of {score} is not possible in {game.default_time_sec}s'
+
+    if game is not None and game.slug in COMBO_SCORED_GAMES:
+        window = (game.default_time_sec or 60) + CLOCK_SLACK_SECONDS
+        ceiling = window * MAX_PUNCHES_PER_SECOND * MAX_PUNCH_MULTIPLIER
+        if score > ceiling:
+            return f'score of {score} is not possible in {game.default_time_sec}s'
     return None
 
 
@@ -541,6 +547,7 @@ DEFAULT_GAMES = [
     # Competitive: ranked 1v1, matchmaking only, feeds the leaderboards.
     {'slug': 'pushups', 'name': 'Push-Ups', 'max_players': 2, 'is_1v1': True, 'default_time_sec': 60, 'category': COMPETITIVE},
     {'slug': 'squats', 'name': 'Squats', 'max_players': 2, 'is_1v1': True, 'default_time_sec': 60, 'category': COMPETITIVE},
+    {'slug': 'shadowbox', 'name': 'Shadow Boxing', 'max_players': 2, 'is_1v1': True, 'default_time_sec': 60, 'category': COMPETITIVE},
     # Seeded but not offered: see HIDDEN_GAMES.
     {'slug': 'rapbattle', 'name': 'Rap Battle', 'max_players': 2, 'is_1v1': True, 'default_time_sec': 60, 'category': COMPETITIVE},
     # Facial Symmetry and Mog were the same contest under two names.
@@ -561,6 +568,14 @@ HIDDEN_GAMES = {'rapbattle'}
 # so old matches keep their foreign key, but they are never offered again.
 # Games whose score is a rep count, so a per-second ceiling applies.
 REP_COUNTED_GAMES = {'pushups', 'squats'}
+
+# Shadow boxing scores punches times a combo multiplier, so its ceiling is not
+# a rep count. A fast boxer throws about five punches a second, and the
+# multiplier tops out at five, so this is the most a minute can be worth with
+# a generous margin on both.
+MAX_PUNCHES_PER_SECOND = 5
+MAX_PUNCH_MULTIPLIER = 5
+COMBO_SCORED_GAMES = {'shadowbox'}
 
 REPLACED_GAMES = {'symmetry': 'looks', 'mog': 'looks', 'textchat': 'chat1v1', 'ffa': 'groupchat'}
 

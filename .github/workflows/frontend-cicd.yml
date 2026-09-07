@@ -135,6 +135,7 @@ jobs:
           sleep 3
           python frontend/expo/e2e/rep_counter.py http://127.0.0.1:8100/
           python frontend/expo/e2e/flow_scorer.py http://127.0.0.1:8100/
+          python frontend/expo/e2e/punch_counter.py http://127.0.0.1:8100/
           python frontend/expo/e2e/smoke.py http://127.0.0.1:8100/
           python frontend/expo/e2e/ranked_match.py http://127.0.0.1:8100/
           python frontend/expo/e2e/full_journey.py http://127.0.0.1:8100/
