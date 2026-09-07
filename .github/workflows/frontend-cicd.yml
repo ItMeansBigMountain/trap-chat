@@ -159,6 +159,7 @@ jobs:
           run_suite rep_counter python frontend/expo/e2e/rep_counter.py http://127.0.0.1:8100/
           run_suite flow_scorer python frontend/expo/e2e/flow_scorer.py http://127.0.0.1:8100/
           run_suite punch_counter python frontend/expo/e2e/punch_counter.py http://127.0.0.1:8100/
+          run_suite ad_policy python frontend/expo/e2e/ad_policy.py http://127.0.0.1:8100/
           run_suite profanity_and_face python frontend/expo/e2e/profanity_and_face.py http://127.0.0.1:8100/
           run_suite smoke python frontend/expo/e2e/smoke.py http://127.0.0.1:8100/
           run_suite ranked_match python frontend/expo/e2e/ranked_match.py http://127.0.0.1:8100/

@@ -32,9 +32,15 @@ import { Icon } from '../components/Icon';
 import { ReportSheet } from '../components/ReportSheet';
 import { useLayout } from '../hooks/useLayout';
 import { filterIf } from '../services/profanity';
+import { AdBreak } from '../components/AdBreak';
+import { adIsDue, freshState, recordAd, recordMatch, AdState, Viewer } from '../services/adPolicy';
 import { T } from '../theme';
 
 const SCREEN_HEIGHT = Dimensions.get('window').height;
+
+// Ad pacing is per session, not per mount. Remounting on every trip through
+// Browse would otherwise reset the clock and let the cap be walked around.
+let adState: AdState | null = null;
 
 
 interface Line {
@@ -45,7 +51,7 @@ interface Line {
 }
 
 export function SocialScreen() {
-  const { state, enterSocial, leaveMatch, cancelSearch } = useApp();
+  const { state, enterSocial, leaveMatch, cancelSearch, logout } = useApp();
   const { isWide, height } = useLayout();
   const match = state.currentMatch;
   const [connecting, setConnecting] = useState(false);
@@ -55,7 +61,11 @@ export function SocialScreen() {
   const [liked, setLiked] = useState(false);
   const [saved, setSaved] = useState(false);
   const [reporting, setReporting] = useState(false);
+  const [showingAd, setShowingAd] = useState(false);
   const [presence, setPresence] = useState<Presence | null>(null);
+
+  const viewer: Viewer = state.auth.status === 'authenticated' ? 'account' : 'guest';
+  if (adState === null) adState = freshState(Date.now());
 
   // Only while there is nothing else to look at. Polling behind a live chat
   // would be noise.
@@ -99,9 +109,38 @@ export function SocialScreen() {
     setLines([]);
     setLiked(false);
     setSaved(false);
+
+    // A finished chat is a match played, and the boundary between two chats
+    // is the one moment an ad interrupts nothing.
+    if (adState) adState = recordMatch(adState);
+    if (adState && adIsDue(adState, viewer, Date.now(), false)) {
+      adState = recordAd(adState, Date.now());
+      setShowingAd(true);
+      return;
+    }
+
     setConnecting(true);
     // Finish the throw so the old chat leaves the screen instead of hanging
     // half-swiped while the request is in flight.
+    Animated.timing(drag, {
+      toValue: -SCREEN_HEIGHT,
+      duration: 160,
+      useNativeDriver: true,
+    }).start();
+    try {
+      await enterSocial(state.socialMode as GameSlug);
+    } catch (err: any) {
+      setError(err?.message ?? 'Could not find anyone right now');
+    } finally {
+      setConnecting(false);
+      drag.setValue(0);
+    }
+  }, [enterSocial, drag, state.socialMode, viewer]);
+
+  // The search on its own. `next` decides whether an ad is due first; this is
+  // what runs once the break is over, so a break cannot trigger another one.
+  const nextAfterAd = useCallback(async () => {
+    setConnecting(true);
     Animated.timing(drag, {
       toValue: -SCREEN_HEIGHT,
       duration: 160,
@@ -194,6 +233,24 @@ export function SocialScreen() {
     setLines((prev) => [...prev, { id: `${Date.now()}`, from: me, text }]);
     setDraft('');
   };
+
+  if (showingAd) {
+    return (
+      <AdBreak
+        viewer={viewer}
+        onDone={() => {
+          setShowingAd(false);
+          // Straight on to finding the next person, which is what they were
+          // waiting for before the break.
+          void nextAfterAd();
+        }}
+        onCreateAccount={() => {
+          setShowingAd(false);
+          logout();
+        }}
+      />
+    );
+  }
 
   if (connecting) {
     return (
