@@ -4,6 +4,10 @@ Project working agreements, deployment model, Azure architecture decisions,
 and known gotchas are documented in [AGENTS.md](AGENTS.md). Read that file
 before making changes.
 
+Scaling limits, in the order they will bite, are in
+[SCALING.md](SCALING.md). Read it before adding a replica: four pieces of
+in-process state make a second one fail silently.
+
 Key points, in short:
 
 - **Push to deploy.** No manual deployments, no manual applies, no portal
