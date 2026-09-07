@@ -49,7 +49,10 @@ def main() -> int:
     social = {g["slug"] for g in games if g["category"] == "social"}
     competitive = {g["slug"] for g in games if g["category"] == "competitive"}
     check("catalog has both social shapes", social == {"chat1v1", "groupchat"}, str(sorted(social)))
-    check("catalog has the ranked games", {"pushups", "rapbattle", "looks"} <= competitive, str(sorted(competitive)))
+    check("catalog has the ranked games", {"pushups", "squats", "looks"} <= competitive, str(sorted(competitive)))
+    # Rap Battle is seeded so finished battles resolve, but held back from the
+    # board until it has a turn structure.
+    check("held-back games are not offered", "rapbattle" not in slugs, str(sorted(slugs)))
     check("no superseded games are offered", not ({"textchat", "ffa", "symmetry", "mog"} & slugs), str(sorted(slugs)))
 
     # --- IDENTITY -----------------------------------------------------
