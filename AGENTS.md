@@ -319,6 +319,42 @@ three places and all three are needed:
 - `player_joined` and `player_left` update `currentMatch.players` in the
   reducer. They used to reach a `console.log` and nothing else.
 
+## Counting reps, and what the research says
+
+Perception is a trained model; judging is deterministic rules on top of it.
+That split is why the counting rules are unit-testable with no camera.
+
+**The model.** MediaPipe Pose Landmarker (BlazePose), running in the browser
+on WASM, 33 landmarks, no frame ever leaves the device. It runs at
+`pose_landmarker_full`, not `lite`: measurements of BlazePose put only about
+43% of push-up joint angles within 5 degrees, and a joint angle is the thing
+reps are counted from, so accuracy is worth more here than frame rate. The
+confidence thresholds are raised to 0.6 from the 0.5 default for the same
+reason -- a low-confidence detection is a wrong angle, and a wrong angle is
+either a phantom rep or a real one refused.
+
+**The rules**, and why each exists:
+
+- **The angle is smoothed** before any threshold is applied. Landmarks jitter,
+  and a threshold crossing on one noisy frame is a phantom rep.
+- **Hysteresis**, not a single threshold: down below 95 degrees, up above 155.
+- **Form is gated, not just measured.** A push-up needs the body in a line
+  (shoulder-hip-ankle above 150 degrees), or bending your arms with your hips
+  in the air counts. A squat needs the hips to actually drop, by at least 0.15
+  of a torso length, or a small knee bend counts.
+- **Distances are normalised by torso length**, so a threshold means the same
+  thing two feet from the camera and ten.
+- **A refused rep says why** -- "keep your body straight", "go lower" -- or
+  the player has no way to fix it.
+
+**What is deliberately not built yet.** Google's own pose classification for
+these two exercises adds a k-NN classifier over pose embeddings: normalise the
+pose for torso size and rotation, embed it as pairwise joint distances, then
+classify up/down against a labelled sample set with two distance metrics and
+EMA smoothing on the probabilities. It is more robust to camera angle than
+geometry is, and it is the obvious next step -- but it needs a labelled
+training set of push-up and squat frames, which we would have to collect.
+
 ## Judged battles: what the machine decides and what it does not
 
 Rap Battle and Looks Battle have no objective score. Every real battle rap

@@ -31,4 +31,8 @@ def test_games_endpoint_returns_seeded_games(tmp_path):
     response = app.test_client().get("/api/games")
 
     assert response.status_code == 200
-    assert {game["slug"] for game in response.get_json()} >= {"pushups", "squats", "rapbattle"}
+    offered = {game["slug"] for game in response.get_json()}
+    assert offered >= {"pushups", "squats", "looks", "chat1v1", "groupchat"}
+    # Rap Battle is seeded so old battles still resolve, but it is held back
+    # until it has a turn structure, so it must not appear on the board.
+    assert "rapbattle" not in offered

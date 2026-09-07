@@ -192,7 +192,11 @@ def run_for(smoke: Smoke) -> None:
     smoke.goto("Competitive")
     text = smoke.body()
     smoke.check("competitive offers no room code", "JOIN BY CODE" not in text)
-    smoke.check("competitive lists ranked games", "Rap Battle" in text and "Looks Battle" in text)
+    smoke.check("competitive lists ranked games",
+                all(name in text for name in ("Push-Ups", "Squats", "Looks Battle")), text[:120])
+    # Rap Battle is built but held back until it has a turn structure, so it
+    # must not be on the board.
+    smoke.check("competitive does not offer a held-back game", "Rap Battle" not in text)
 
     # --- CONSOLE ------------------------------------------------------
     smoke.check("no console errors", not smoke.console_errors, "; ".join(smoke.console_errors[:2]))

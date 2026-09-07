@@ -49,7 +49,7 @@ def test_games_are_split_into_social_and_competitive(tmp_path):
     assert by_slug["groupchat"]["category"] == "social", "text chat is a social channel, not a contest"
     assert by_slug["groupchat"]["category"] == "social"
     assert by_slug["pushups"]["category"] == "competitive"
-    assert by_slug["rapbattle"]["category"] == "competitive"
+    assert by_slug["looks"]["category"] == "competitive"
     # Facial Symmetry and Mog were the same idea; they are one game now.
     assert "symmetry" not in by_slug
     assert by_slug["looks"]["category"] == "competitive"

@@ -73,75 +73,18 @@ with sync_playwright() as p:
     t = int(time.time())
     errors = []
 
-    # ---------- JOURNEY 1: A RAP BATTLE, PLAYED AND JUDGED ----------
+    # Rap Battle is built and tested at the API level, but it is held back
+    # from the board until it has a turn structure, so no browser journey can
+    # reach it. Its leg comes back when the game does.
     one = guest(browser, f"mc{t}")
-    two = guest(browser, f"dj{t}")
-    for page in (one, two):
-        page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
-
-    to_competitive(one)
-    one.get_by_text("Rap Battle", exact=True).click()
-    one.wait_for_timeout(3000)
-    to_competitive(two)
-    two.get_by_text("Rap Battle", exact=True).click()
-    two.wait_for_timeout(6000)
-    one.wait_for_timeout(3000)
-
-    paired = "Pick a beat" in body(one) and "Pick a beat" in body(two)
-    check("both rappers reach the beat picker", paired, one_line(one))
-
-    if not paired:
-        print("SKIP  the rest of the battle: the pair never formed", flush=True)
-    else:
-        # A beat has to be choosable, and the choice has to stick.
-        one.get_by_text("Trap", exact=True).first.click()
-        one.wait_for_timeout(600)
-        check("a beat can be selected", "140 BPM" in body(one), one_line(one))
-
-        for page in (one, two):
-            page.get_by_text("Use ", exact=False).first.click()
-            page.wait_for_timeout(1200)
-        check("choosing a beat opens the turn", "Start my turn" in body(one), one_line(one))
-
-        # The turn itself: mic, beat and meter running.
-        for page in (one, two):
-            page.get_by_text("Start my turn", exact=True).click()
-            page.wait_for_timeout(4000)
-        running = "bars" in body(one) and ("ON BEAT" in body(one) or "OFF BEAT" in body(one) or "CLOSE" in body(one))
-        check("the turn runs with a live meter", running, one_line(one))
-
-        # End early rather than waiting out sixty seconds.
-        for page in (one, two):
-            page.get_by_text("End my turn", exact=True).click()
-            page.wait_for_timeout(3500)
-        check("ending the turn reaches the vote", "The room decides" in body(one), one_line(one))
-        check("the flow score is reported", "YOUR FLOW" in body(one), one_line(one, 200))
-
-        # Voting. Each side votes for the other; nobody may vote for themselves.
-        check("you cannot vote for yourself", "That is you" in body(one), one_line(one, 200))
-        # If an earlier suite left a guest queued, this browser paired with
-        # that ghost instead of its own partner and every check below would be
-        # measuring the wrong match.
-        check("the two browsers are in the same battle",
-              f"dj{t}" in body(one), one_line(one, 220))
-
-        votes = one.get_by_text("Vote", exact=True)
-        if votes.count():
-            votes.first.click()
-            one.wait_for_timeout(2500)
-            check("a vote registers", "Your vote" in body(one), one_line(one, 200))
-
-            two.wait_for_timeout(2000)
-            check("the tally reaches the other browser live",
-                  "1 vote" in body(two), one_line(two, 220))
-        else:
-            check("a vote button is offered", False, one_line(one, 200))
+    one.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
 
     # ---------- JOURNEY 1b: A RANKED MATCH THAT SOMEBODY WINS ----------
     # Push-ups is the game with a number attached, so it is the one that has
     # to end with a winner rather than two scores sitting side by side.
     ra = guest(browser, f"ra{t}")
     rb = guest(browser, f"rb{t}")
+    rb.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
     to_competitive(ra)
     ra.get_by_text("Push-Ups", exact=True).click()
     ra.wait_for_timeout(3000)

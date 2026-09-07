@@ -541,6 +541,7 @@ DEFAULT_GAMES = [
     # Competitive: ranked 1v1, matchmaking only, feeds the leaderboards.
     {'slug': 'pushups', 'name': 'Push-Ups', 'max_players': 2, 'is_1v1': True, 'default_time_sec': 60, 'category': COMPETITIVE},
     {'slug': 'squats', 'name': 'Squats', 'max_players': 2, 'is_1v1': True, 'default_time_sec': 60, 'category': COMPETITIVE},
+    # Seeded but not offered: see HIDDEN_GAMES.
     {'slug': 'rapbattle', 'name': 'Rap Battle', 'max_players': 2, 'is_1v1': True, 'default_time_sec': 60, 'category': COMPETITIVE},
     # Facial Symmetry and Mog were the same contest under two names.
     {'slug': 'looks', 'name': 'Looks Battle', 'max_players': 2, 'is_1v1': True, 'default_time_sec': 30, 'category': COMPETITIVE},
@@ -548,6 +549,13 @@ DEFAULT_GAMES = [
     {'slug': 'chat1v1', 'name': '1:1 Chat', 'max_players': 2, 'is_1v1': True, 'default_time_sec': 0, 'category': SOCIAL},
     {'slug': 'groupchat', 'name': 'Group Chat', 'max_players': 20, 'is_1v1': False, 'default_time_sec': 0, 'category': SOCIAL},
 ]
+
+# Built, working, and deliberately not offered. Rap Battle has no turn
+# structure yet: both sides rap at once and then vote without having heard
+# each other, which makes the vote meaningless. It stays seeded so finished
+# battles still resolve and so the screens keep working; taking the slug out
+# of this set is all it takes to put it back on the board.
+HIDDEN_GAMES = {'rapbattle'}
 
 # Slugs that existed before the catalog was reorganised. They stay in the table
 # so old matches keep their foreign key, but they are never offered again.
@@ -813,7 +821,7 @@ def api_games():
     # The catalog in DEFAULT_GAMES is the source of truth; the table is only
     # storage. Filtering on the stored category alone let a row from an older
     # build keep showing up after the catalog moved on, so match on slug.
-    offered = [spec['slug'] for spec in DEFAULT_GAMES]
+    offered = [spec['slug'] for spec in DEFAULT_GAMES if spec['slug'] not in HIDDEN_GAMES]
     games = Game.query.filter(Game.slug.in_(offered)).all()
     order = {slug: i for i, slug in enumerate(offered)}
     games.sort(key=lambda g: order.get(g.slug, len(order)))

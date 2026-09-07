@@ -8,8 +8,13 @@ import { ExerciseSpec, Landmark, RepCounter, RepUpdate } from './repCounter';
 // The model and wasm are fetched from Google's CDN on first use. They are a
 // few megabytes, so the caller should show that something is loading.
 const WASM_ROOT = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22-rc.20250304/wasm';
+// BlazePose comes in three weights. "lite" is the fastest and the least
+// accurate, and joint angles are what this app counts reps from: measurements
+// of BlazePose put only about 43% of push-up joint angles within 5 degrees, so
+// accuracy buys more here than frame rate does. "full" is the middle one and
+// still runs on a phone at well above the rate a person moves.
 const MODEL_URL =
-  'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task';
+  'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task';
 
 export type TrackerState = 'idle' | 'loading' | 'running' | 'failed';
 
@@ -74,6 +79,12 @@ export class PoseTracker {
         baseOptions: { modelAssetPath: MODEL_URL, delegate: 'GPU' },
         runningMode: 'VIDEO',
         numPoses: 1,
+        // Defaults are 0.5 across the board. Raised, because a low-confidence
+        // detection is a wrong joint angle, and a wrong joint angle is either
+        // a phantom rep or a real one refused.
+        minPoseDetectionConfidence: 0.6,
+        minPosePresenceConfidence: 0.6,
+        minTrackingConfidence: 0.6,
       });
     } catch (err: any) {
       handlers.onState?.('failed', 'Could not load the pose model.');

@@ -64,12 +64,12 @@ with sync_playwright() as p:
 
     other = joiner = a = bb = None
     solo = fresh_guest(f"rc{t}")
-    solo.get_by_text("Rap Battle", exact=True).click(); solo.wait_for_timeout(6000)
+    solo.get_by_text("Looks Battle", exact=True).click(); solo.wait_for_timeout(6000)
     early = solo.inner_text("body")
     if "Ranked 1v1" in early:
-        print("SKIP  the lone-queue checks: someone else was queued for Rap Battle", flush=True)
+        print("SKIP  the lone-queue checks: someone else was queued for Looks Battle", flush=True)
     else:
-        check("a lone queue names the game it is for", "Rap Battle" in early,
+        check("a lone queue names the game it is for", "Looks Battle" in early,
               early[:110].replace(chr(10), " | "))
         check("a lone queue says you are the only one",
               "only one in this queue" in early, early[:130].replace(chr(10), " | "))
@@ -77,10 +77,10 @@ with sync_playwright() as p:
         # The bug this was all reported as: two people queue, for different
         # games, and both wait forever while each looks broken.
         other = fresh_guest(f"rd{t}")
-        other.get_by_text("Looks Battle", exact=True).click(); other.wait_for_timeout(6000)
+        other.get_by_text("Squats", exact=True).click(); other.wait_for_timeout(6000)
         other_body = other.inner_text("body")
         if "Ranked 1v1" in other_body:
-            print("SKIP  different-queue check: someone was queued for Looks Battle", flush=True)
+            print("SKIP  different-queue check: someone was queued for Squats", flush=True)
         else:
             check("a different game is a different queue",
                   "only one in this queue" in other_body,
@@ -88,12 +88,12 @@ with sync_playwright() as p:
 
         # ...and picking the same one pairs them.
         joiner = fresh_guest(f"re{t}")
-        joiner.get_by_text("Rap Battle", exact=True).click(); joiner.wait_for_timeout(7000)
+        joiner.get_by_text("Looks Battle", exact=True).click(); joiner.wait_for_timeout(7000)
         solo.wait_for_timeout(3000)
-        # A paired Rap Battle opens its own beat picker, not the generic
-        # ranked match screen.
+        # A paired Looks Battle opens its showcase, not the generic ranked
+        # match screen.
         check("queueing for the same game pairs both sides",
-              "Pick a beat" in joiner.inner_text("body") and "Pick a beat" in solo.inner_text("body"),
+              "Go to the vote" in joiner.inner_text("body") and "Go to the vote" in solo.inner_text("body"),
               joiner.inner_text("body")[:110].replace(chr(10), " | "))
 
 
@@ -113,10 +113,10 @@ with sync_playwright() as p:
 
     a = fresh_guest(f"qa{t}")
     bb = fresh_guest(f"qb{t}")
-    if not queue_then_requeue(a, "Squats"):
-        print("SKIP  re-queue check: somebody was already queued for Squats", flush=True)
+    if not queue_then_requeue(a, "Push-Ups"):
+        print("SKIP  re-queue check: somebody was already queued for Push-Ups", flush=True)
     else:
-        queue_then_requeue(bb, "Squats")
+        queue_then_requeue(bb, "Push-Ups")
         bb.wait_for_timeout(5000); a.wait_for_timeout(3000)
         check("two clients that both re-queued still pair",
               "Ranked 1v1" in a.inner_text("body") and "Ranked 1v1" in bb.inner_text("body"),
