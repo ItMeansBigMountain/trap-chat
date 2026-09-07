@@ -1229,6 +1229,51 @@ def api_battle_vote(match_id):
     return jsonify({'match_id': match.id, 'tally': tally, 'my_vote': target.id})
 
 
+@app.route('/api/matches/quick/cancel', methods=['POST'])
+@guest_or_auth
+def api_cancel_quick_match():
+    """Leave the queue for a game.
+
+    Cancelling used to be client-side only: the screen stopped searching and
+    the server entry sat there for the whole QUEUE_TIMEOUT_MINUTES. The next
+    player to queue was paired with someone who had walked away, waited for a
+    match that could never start, and had no way to tell why.
+    """
+    data = request.get_json() or {}
+    game = Game.query.filter_by(slug=data.get('game_slug')).first_or_404()
+    guest_session = guest_session_id()
+    identity_filter = (
+        MatchPlayer.user_id == request.user.id
+        if request.user else MatchPlayer.guest_session_id == guest_session
+    )
+
+    removed = 0
+    with MATCHMAKING_LOCK:
+        mine = (
+            Match.query.join(MatchPlayer)
+            .filter(identity_filter, Match.game_id == game.id, Match.status == 'waiting')
+            .all()
+        )
+        for match in mine:
+            for player in list(match.players):
+                is_me = (
+                    player.user_id == request.user.id if request.user
+                    else player.guest_session_id == guest_session
+                )
+                if is_me:
+                    db.session.delete(player)
+                    removed += 1
+            db.session.flush()
+            # An empty queue is not a room anybody should be offered.
+            if not [p for p in match.players if p.left_at is None]:
+                for player in list(match.players):
+                    db.session.delete(player)
+                db.session.delete(match)
+        db.session.commit()
+
+    return jsonify({'game': game.slug, 'left': removed})
+
+
 @app.route('/api/games/<slug>/queue', methods=['GET'])
 @guest_or_auth
 def api_game_queue(slug):

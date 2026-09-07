@@ -305,12 +305,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [state.currentMatch]);
 
   const cancelSearch = useCallback(() => {
-    // Stop claiming the queued match, or a socket reconnect would silently
-    // put this client back into a queue it just left. The server-side entry
-    // expires on its own.
+    // Tell the server, not just this screen. Leaving the entry behind meant a
+    // cancelled player stayed matchable for the whole queue timeout, and the
+    // next person to queue was paired with someone who had walked away.
+    if (state.searchGame) void api.cancelQuickMatch(state.searchGame).catch(() => {});
+    // Stop claiming the queued match too, or a socket reconnect would put
+    // this client back into a queue it just left.
     api.forgetMatch();
     dispatch({ type: 'SET_SEARCHING', payload: { isSearching: false, game: null } });
-  }, []);
+  }, [state.searchGame]);
 
   const submitResult = useCallback(async (matchId: number, result: GameResult) => {
     await api.submitResult(matchId, result);

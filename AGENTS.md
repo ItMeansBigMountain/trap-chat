@@ -231,6 +231,12 @@ present players are waiting for that game. The Competitive banner polls it and
 names the queue you are in, so two people in different queues can see that
 immediately instead of each concluding the app is broken.
 
+- **Cancelling actually leaves the queue.** `POST /api/matches/quick/cancel`
+  removes your waiting entry and deletes the room if that empties it. It used
+  to be client-side only, so a cancelled player stayed matchable for the whole
+  timeout and the next arrival was paired with someone who had walked away.
+  A test suite that leaves a guest queued does the same thing to the suite
+  that runs after it, so every suite hands its queues back when it finishes.
 - **Your own entry is never counted as an opponent.** Counting it would promise
   a match the server will not make.
 - **Stale and in-progress entries do not count.** Someone who queued an hour

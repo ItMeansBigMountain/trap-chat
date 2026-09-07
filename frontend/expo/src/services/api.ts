@@ -199,6 +199,13 @@ class ApiService {
     return this.request(`/api/matches/${matchId}/submit`, { method: 'POST', body: JSON.stringify(result) });
   }
 
+  async cancelQuickMatch(gameSlug: GameSlug): Promise<{ left: number }> {
+    return this.request('/api/matches/quick/cancel', {
+      method: 'POST',
+      body: JSON.stringify({ game_slug: gameSlug }),
+    });
+  }
+
   async getQueue(gameSlug: GameSlug): Promise<QueueState> {
     return this.request(`/api/games/${gameSlug}/queue`);
   }

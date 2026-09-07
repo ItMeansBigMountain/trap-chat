@@ -119,6 +119,11 @@ with sync_playwright() as p:
 
         # Voting. Each side votes for the other; nobody may vote for themselves.
         check("you cannot vote for yourself", "That is you" in body(one), one_line(one, 200))
+        # If an earlier suite left a guest queued, this browser paired with
+        # that ghost instead of its own partner and every check below would be
+        # measuring the wrong match.
+        check("the two browsers are in the same battle",
+              f"dj{t}" in body(one), one_line(one, 220))
 
         votes = one.get_by_text("Vote", exact=True)
         if votes.count():
@@ -151,6 +156,8 @@ with sync_playwright() as p:
             page.get_by_text("Go to the vote", exact=True).click()
             page.wait_for_timeout(3000)
         check("the showcase leads to a vote", "The room decides" in body(lx), one_line(lx))
+        check("the two browsers are in the same looks battle",
+              f"ly{t}" in body(lx), one_line(lx, 220))
         check("looks battle offers no fake score",
               "YOUR FLOW" not in body(lx), one_line(lx, 200))
 

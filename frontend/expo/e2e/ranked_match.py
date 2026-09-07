@@ -62,6 +62,7 @@ with sync_playwright() as p:
         to_competitive(page)
         return page
 
+    other = joiner = a = bb = None
     solo = fresh_guest(f"rc{t}")
     solo.get_by_text("Rap Battle", exact=True).click(); solo.wait_for_timeout(6000)
     early = solo.inner_text("body")
@@ -120,6 +121,20 @@ with sync_playwright() as p:
         check("two clients that both re-queued still pair",
               "Ranked 1v1" in a.inner_text("body") and "Ranked 1v1" in bb.inner_text("body"),
               ("A: " + a.inner_text("body")[:60] + " || B: " + bb.inner_text("body")[:60]).replace(chr(10), " | "))
+
+    # Hand back every queue this file opened. A guest left waiting is an
+    # opponent the next suite pairs with instead of its own second client,
+    # which is a failure with no visible cause.
+    for page in [p for p in (solo, other, joiner, a, bb) if p is not None]:
+        try:
+            if page.get_by_text("Cancel", exact=True).count():
+                page.get_by_text("Cancel", exact=True).first.click()
+                page.wait_for_timeout(600)
+            elif page.get_by_text("Forfeit", exact=True).count():
+                page.get_by_text("Forfeit", exact=True).first.click()
+                page.wait_for_timeout(600)
+        except Exception:
+            pass  # A page that already finished has nothing to release.
 
     print("=== errors p1 ==="); [print("  ",x[:150]) for x in e1[:5]]
     print("=== errors p2 ==="); [print("  ",x[:150]) for x in e2[:5]]
