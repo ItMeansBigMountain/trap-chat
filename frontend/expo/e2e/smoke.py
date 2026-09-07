@@ -30,7 +30,10 @@ PAGE_MARKERS = {
     "Random": ["Swipe up to skip", "Drop into a channel", "Searching"],
     "Browse": ["JOIN BY CODE", "START A ROOM"],
     "Competitive": ["Ranked matchmaking"],
-    "Leaderboards": ["No scores yet", "Rap Battle"],
+    # The tabs are always there whether or not anybody has scored, which the
+    # old markers were not: one named a game that is no longer offered and the
+    # other only appears while the board is empty.
+    "Leaderboards": ["Squats", "Looks Battle"],
     "Profile": ["SIGNED IN AS", "MATCH ME WITH"],
 }
 
