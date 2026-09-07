@@ -48,6 +48,22 @@ def guest(browser, name):
     return page
 
 
+def close(*pages):
+    """Give a journey's browsers back.
+
+    This file opens nine contexts, each running WebRTC and a pose or face
+    model. Left open they all stay resident, and on a two-core CI runner the
+    renderer eventually dies -- which shows up as "waiting for locator(body)"
+    thirty seconds later, in a completely different journey to the one that
+    caused it.
+    """
+    for page in pages:
+        try:
+            page.context.close()
+        except Exception:
+            pass  # Already gone. Nothing to reclaim.
+
+
 def to_competitive(page):
     page.locator('[aria-label="Open menu"]').first.click()
     page.wait_for_timeout(700)
@@ -108,6 +124,8 @@ with sync_playwright() as p:
               "forfeit" in body(rb).lower() or "lose" in body(rb).lower(),
               one_line(rb, 220))
 
+    close(one, ra, rb)
+
     # ---------- JOURNEY 1c: SHADOW BOXING, WHICH SCORES A COMBO ----------
     sx = guest(browser, f"bx{t}")
     sy = guest(browser, f"by{t}")
@@ -133,6 +151,8 @@ with sync_playwright() as p:
         sx.wait_for_timeout(2500)
         check("forfeiting a boxing match declares a winner",
               "You win" in body(sx), one_line(sx, 220))
+
+    close(sx, sy)
 
     # ---------- JOURNEY 2: MOG OFF, WHICH IS MEASURED ----------
     lx = guest(browser, f"lx{t}")
@@ -162,6 +182,8 @@ with sync_playwright() as p:
         ly.wait_for_timeout(4000)
         lx.wait_for_timeout(2500)
         check("forfeiting a mog off declares a winner", "You win" in body(lx), one_line(lx, 240))
+
+    close(lx, ly)
 
     # ---------- JOURNEY 3: TWO STRANGERS IN A SOCIAL CHAT ----------
     a = guest(browser, f"sa{t}")
@@ -203,6 +225,8 @@ with sync_playwright() as p:
         b.wait_for_timeout(2500)
         check("leaving returns you to the start screen",
               "Start" in body(b) and "Swipe up to skip" not in body(b), one_line(b, 120))
+
+    close(a, b)
 
     print("\n=== console errors ===")
     for e in errors[:6]:
