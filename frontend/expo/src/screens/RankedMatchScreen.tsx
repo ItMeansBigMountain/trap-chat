@@ -44,6 +44,15 @@ export function RankedMatchScreen() {
   const spec = EXERCISES[slug];
   const duration = match?.game?.default_time_sec || 60;
 
+  // The result names the winner by display name, so this screen has to know
+  // which of the two names is the person looking at it.
+  const me =
+    state.auth.status === 'authenticated'
+      ? state.auth.user.username
+      : state.auth.status === 'guest'
+      ? state.auth.session.display_name
+      : '';
+
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [reps, setReps] = useState(0);
   const [stage, setStage] = useState<'up' | 'down'>('up');
@@ -104,8 +113,33 @@ export function RankedMatchScreen() {
       }
     });
     const offFinished = api.onMatchFinished((data) => {
-      const result = (data as { outcome?: string }).outcome;
-      setOutcome(result === 'stalemate' ? 'Stalemate: your opponent disconnected.' : 'Match finished.');
+      const payload = data as {
+        outcome?: string;
+        winner?: string | null;
+        rated?: boolean;
+        results?: { name: string; rating_change?: number | null; rating?: number | null }[];
+      };
+      if (payload.outcome === 'stalemate') {
+        setOutcome('Stalemate: your opponent disconnected. No rating changed.');
+      } else if (payload.outcome === 'draw') {
+        setOutcome('Draw. Identical scores, so neither rating moved.');
+      } else if (payload.winner) {
+        const iWon = payload.winner === me;
+        const forfeit = payload.outcome === 'forfeit';
+        const headline = iWon
+          ? forfeit ? 'You win. They forfeited.' : 'You win.'
+          : forfeit ? 'You forfeited.' : 'You lose.';
+        // The rating line only exists when both players had one to move.
+        const mine = payload.results?.find((row) => row.name === me);
+        const delta = mine?.rating_change;
+        setOutcome(
+          delta === undefined || delta === null
+            ? `${headline} Unrated: guests have no rating to stake.`
+            : `${headline} ${delta >= 0 ? '+' : ''}${delta} rating, now ${mine?.rating}.`,
+        );
+      } else {
+        setOutcome('Match finished.');
+      }
       setFinished(true);
     });
     return () => {

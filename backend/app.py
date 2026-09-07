@@ -454,7 +454,17 @@ def start_if_ready(match, game):
     db.session.commit()
     socketio.emit(
         'match_start',
-        {'match_id': match.id, 'room_code': match.room_code, 'game': game.slug},
+        {
+            'match_id': match.id,
+            'room_code': match.room_code,
+            'game': game.slug,
+            # Both sides are told who they are playing, so neither has to wait
+            # for a player_joined that already happened.
+            'players': [
+                {'id': p.id, 'display_name': p.display_name}
+                for p in present_players(match)
+            ],
+        },
         to=f'match_{match.id}',
     )
     return True
@@ -1077,6 +1087,13 @@ def api_join_room(code):
     touch_match_presence(match.id)
 
     return jsonify({
+        # Who is already here. Without this the person who joins learns about
+        # everyone who arrives after them and nobody who was there first, so
+        # one side of a two person room shows it as empty.
+        'players': [
+            {'id': p.id, 'display_name': p.display_name}
+            for p in present_players(match)
+        ],
         'match_id': match.id,
         'room_code': room.code,
         'game': room.game.slug,
@@ -1132,12 +1149,138 @@ def api_submit_result(match_id):
     # Check if all players submitted
     all_submitted = all(p.result_json for p in match.players)
     if all_submitted:
-        match.status = 'finished'
-        match.finished_at = datetime.utcnow()
-        db.session.commit()
-        socketio.emit('match_finished', {'match_id': match.id, 'results': [{'name': p.display_name, 'result': json.loads(p.result_json) if p.result_json else {}} for p in match.players]}, to=f'match_{match.id}')
+        if game.category == COMPETITIVE:
+            # Somebody won. Say so, and move both ratings.
+            settle_match(match)
+        else:
+            match.status = 'finished'
+            match.finished_at = datetime.utcnow()
+            db.session.commit()
+            socketio.emit('match_finished', {'match_id': match.id, 'results': [{'name': p.display_name, 'result': json.loads(p.result_json) if p.result_json else {}} for p in match.players]}, to=f'match_{match.id}')
 
     return jsonify({'ok': True})
+
+
+# -------------------------
+# Winning, losing and the ladder
+# -------------------------
+
+# A new player's rating should move fast enough to find its level, then settle
+# so one bad night does not undo a season.
+K_NEW = 32
+K_SETTLED = 16
+PROVISIONAL_GAMES = 10
+
+
+def rated_games_played(user):
+    """Finished competitive matches this user has a result in."""
+    return (
+        MatchPlayer.query.join(Match)
+        .join(Game, Match.game_id == Game.id)
+        .filter(
+            MatchPlayer.user_id == user.id,
+            Match.status == 'finished',
+            Game.category == COMPETITIVE,
+        )
+        .count()
+    )
+
+
+def elo_delta(mine, theirs, outcome, k):
+    """Points to add to my rating. outcome is 1 win, 0.5 draw, 0 loss."""
+    expected = 1 / (1 + 10 ** ((theirs - mine) / 400))
+    return round(k * (outcome - expected))
+
+
+def apply_elo(winner, loser, drawn=False):
+    """Move both ratings. Returns {user_id: delta}, empty if unrated.
+
+    Only matches between two registered players count. A guest has no rating
+    to lose, so rating one would let an account farm points off people who
+    cannot lose any, and the ladder would measure who played the most guests.
+    """
+    if winner is None or loser is None:
+        return {}
+
+    k_w = K_NEW if rated_games_played(winner) < PROVISIONAL_GAMES else K_SETTLED
+    k_l = K_NEW if rated_games_played(loser) < PROVISIONAL_GAMES else K_SETTLED
+    score_w = 0.5 if drawn else 1.0
+
+    before_w, before_l = winner.rating, loser.rating
+    d_w = elo_delta(before_w, before_l, score_w, k_w)
+    d_l = elo_delta(before_l, before_w, 1 - score_w, k_l)
+    winner.rating = before_w + d_w
+    loser.rating = before_l + d_l
+    db.session.commit()
+    return {winner.id: d_w, loser.id: d_l}
+
+
+def decide_by_score(match):
+    """(winner_player, loser_player, drawn) from the submitted results.
+
+    Higher score wins. These are the games with a number attached; the judged
+    ones are settled by vote and never come through here.
+    """
+    scored = []
+    for player in match.players:
+        if not player.result_json:
+            continue
+        try:
+            value = json.loads(player.result_json).get('score')
+        except (TypeError, ValueError):
+            value = None
+        scored.append((player, float(value) if value is not None else 0.0))
+
+    if len(scored) < 2:
+        return None, None, False
+    scored.sort(key=lambda pair: pair[1], reverse=True)
+    (top, top_score), (bottom, bottom_score) = scored[0], scored[1]
+    if top_score == bottom_score:
+        return top, bottom, True
+    return top, bottom, False
+
+
+def settle_match(match, *, forfeited_by=None, reason=None):
+    """End a competitive match and tell the room who won.
+
+    Two ways in. Both players submitted, and the higher score wins; or someone
+    forfeited, which is a decision to lose. A dropped connection is neither: it
+    is a stalemate, because a match should not be winnable by outlasting
+    somebody's wifi.
+    """
+    match.status = 'finished'
+    match.finished_at = datetime.utcnow()
+
+    drawn = False
+    if forfeited_by is not None:
+        loser = forfeited_by
+        winner = next((p for p in match.players if p.id != forfeited_by.id), None)
+    else:
+        winner, loser, drawn = decide_by_score(match)
+
+    deltas = {}
+    if winner is not None and loser is not None:
+        if winner.user is not None and loser.user is not None:
+            deltas = apply_elo(winner.user, loser.user, drawn=drawn)
+    db.session.commit()
+
+    socketio.emit('match_finished', {
+        'match_id': match.id,
+        'outcome': 'draw' if drawn else ('forfeit' if forfeited_by is not None else 'decided'),
+        'reason': reason,
+        'winner': None if drawn or winner is None else winner.display_name,
+        'rated': bool(deltas),
+        'results': [
+            {
+                'name': player.display_name,
+                'result': json.loads(player.result_json) if player.result_json else {},
+                'rating_change': deltas.get(player.user_id),
+                'rating': player.user.rating if player.user is not None else None,
+            }
+            for player in match.players
+        ],
+    }, to=f'match_{match.id}')
+    return winner
 
 
 # -------------------------
@@ -1379,16 +1522,20 @@ def _mark_player_left(match_id, identity, reason='left'):
             match.status = 'finished'
             match.finished_at = datetime.utcnow()
         elif match.game is not None and match.game.category == COMPETITIVE:
-            # A competitive match cannot be won by outlasting someone's
-            # connection, so someone leaving early settles it as a stalemate.
-            match.status = 'finished'
-            match.finished_at = datetime.utcnow()
-            socketio.emit('match_finished', {
-                'match_id': match.id,
-                'outcome': 'stalemate',
-                'reason': reason,
-                'results': [{'name': p.display_name, 'result': {}} for p in match.players],
-            }, to=f'match_{match.id}')
+            if reason == 'disconnected':
+                # A match cannot be won by outlasting somebody's wifi, so a
+                # dropped connection is a stalemate and costs nobody rating.
+                match.status = 'finished'
+                match.finished_at = datetime.utcnow()
+                socketio.emit('match_finished', {
+                    'match_id': match.id,
+                    'outcome': 'stalemate',
+                    'reason': reason,
+                    'results': [{'name': p.display_name, 'result': {}} for p in match.players],
+                }, to=f'match_{match.id}')
+            else:
+                # Forfeiting is a decision to lose, and it is scored like one.
+                settle_match(match, forfeited_by=player, reason=reason)
     db.session.commit()
     return player
 

@@ -211,9 +211,11 @@ export function SocialScreen() {
     );
   }
 
-  const them =
-    match.players?.find((p) => p.display_name !== me)?.display_name ??
-    (match.game?.name ?? 'Room');
+  // Who else is actually here. Empty until somebody arrives, which is the
+  // difference between being in a room and being connected to a person.
+  const others = (match.players ?? []).filter((p) => p.display_name !== me);
+  const them = others[0]?.display_name ?? null;
+  const connected = others.length > 0;
 
   // Up and down are the only controls a live chat needs: there is nothing to
   // like, save or share about a person who is on screen for ten seconds.
@@ -284,14 +286,18 @@ export function SocialScreen() {
 
       {/* CAPTION BLOCK, BOTTOM LEFT, TIKTOK ORDER */}
       <View style={styles.caption} pointerEvents="box-none">
-        <Text style={styles.handle}>@{them}</Text>
+        <Text style={styles.handle}>
+          {connected ? `@${them}` : 'Waiting for someone'}
+        </Text>
         <Text style={styles.captionText} numberOfLines={2}>
-          #{match.room_code} · {match.game?.name ?? 'Chat'} · Swipe up to skip
+          {connected
+            ? `Connected · ${others.length + 1} here · Swipe up to skip`
+            : `#${match.room_code} · ${match.game?.name ?? 'Chat'} · Swipe up to skip`}
         </Text>
         <View style={styles.ticker}>
           <Icon name="music" size={12} color={T.text} />
           <Text style={styles.tickerText} numberOfLines={1}>
-            live audio · {them}
+            {connected ? `live audio · ${them}` : `#${match.room_code}`}
           </Text>
         </View>
       </View>

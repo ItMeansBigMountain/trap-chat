@@ -191,7 +191,7 @@ class ApiService {
     return this.request('/api/rooms');
   }
 
-  async joinRoom(code: string): Promise<{ match_id: number; room_code: string; game: GameSlug; name?: string; game_name?: string }> {
+  async joinRoom(code: string): Promise<{ match_id: number; room_code: string; game: GameSlug; name?: string; game_name?: string; players?: { id: number; display_name: string }[] }> {
     return this.request(`/api/rooms/${code}/join`, { method: 'POST' });
   }
 
@@ -285,7 +285,7 @@ class ApiService {
   sendGameAction(matchId: number, action: string, payload: Record<string, unknown>): void { this.socket?.emit('game_action', { match_id: matchId, action, payload }); }
   sendSignal(signal: WebRTCSignal): void { this.socket?.emit('signal', signal); }
   sendChatMessage(matchId: number, text: string): void { this.socket?.emit('chat_message', { match_id: matchId, text }); }
-  onMatchStart(cb: (data: { match_id: number; room_code: string; game: GameSlug }) => void): () => void { this.socket?.on('match_start', cb); return () => this.socket?.off('match_start', cb); }
+  onMatchStart(cb: (data: { match_id: number; room_code: string; game: GameSlug; players?: { id: number; display_name: string }[] }) => void): () => void { this.socket?.on('match_start', cb); return () => this.socket?.off('match_start', cb); }
   onMatchFinished(cb: (data: { match_id: number; results: { name: string; result: GameResult }[] }) => void): () => void { this.socket?.on('match_finished', cb); return () => this.socket?.off('match_finished', cb); }
   onPlayerJoined(cb: (data: { match_id: number; player: NonNullable<Match['players']>[number] }) => void): () => void { this.socket?.on('player_joined', cb); return () => this.socket?.off('player_joined', cb); }
   onPlayerLeft(cb: (data: { match_id: number; player_id: number }) => void): () => void { this.socket?.on('player_left', cb); return () => this.socket?.off('player_left', cb); }

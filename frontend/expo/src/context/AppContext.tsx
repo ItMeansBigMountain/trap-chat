@@ -33,6 +33,8 @@ type Action =
   | { type: 'SET_AUTH'; payload: AuthState }
   | { type: 'SET_GAMES'; payload: import('../types').Game[] }
   | { type: 'SET_MATCH'; payload: Match | null }
+  | { type: 'PLAYER_JOINED'; payload: { match_id: number; player: { id: number; display_name: string } } }
+  | { type: 'PLAYER_LEFT'; payload: { match_id: number; player_id: number } }
   | { type: 'SET_SEARCHING'; payload: { isSearching: boolean; game: GameSlug | null } }
   | { type: 'SET_LOCATION'; payload: { lat: number; lng: number } }
   | { type: 'SET_SOCIAL_MODE'; payload: AppState['socialMode'] }
@@ -46,6 +48,34 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, games: action.payload };
     case 'SET_MATCH':
       return { ...state, currentMatch: action.payload };
+    // Who is actually in the room, kept current. Without these the screen
+    // showed whoever was there when you arrived, so the person you had just
+    // connected to never appeared and the room looked empty to both of you.
+    case 'PLAYER_JOINED': {
+      const match = state.currentMatch;
+      if (!match || match.id !== action.payload.match_id) return state;
+      const players = match.players ?? [];
+      if (players.some((p) => p.id === action.payload.player.id)) return state;
+      // The broadcast carries only the id and the name, which is all anyone
+      // needs to see; the rest of the row is what the event itself implies.
+      const joined = {
+        ...action.payload.player,
+        match_id: action.payload.match_id,
+        joined_at: new Date().toISOString(),
+      };
+      return { ...state, currentMatch: { ...match, players: [...players, joined] } };
+    }
+    case 'PLAYER_LEFT': {
+      const match = state.currentMatch;
+      if (!match || match.id !== action.payload.match_id) return state;
+      return {
+        ...state,
+        currentMatch: {
+          ...match,
+          players: (match.players ?? []).filter((p) => p.id !== action.payload.player_id),
+        },
+      };
+    }
     case 'SET_SEARCHING':
       return { ...state, isSearching: action.payload.isSearching, searchGame: action.payload.game };
     case 'SET_LOCATION':
@@ -90,7 +120,7 @@ interface AppContextValue {
 // Socket listeners live outside the component so they can be re-attached after
 // a reconnect, which replaces the underlying socket instance.
 function attachSocketListeners(dispatch: React.Dispatch<Action>) {
-  api.onMatchStart(({ match_id, room_code, game }) => {
+  api.onMatchStart(({ match_id, room_code, game, players }) => {
     dispatch({ type: 'SET_MATCH', payload: {
       id: match_id,
       room_code,
@@ -98,13 +128,24 @@ function attachSocketListeners(dispatch: React.Dispatch<Action>) {
       status: 'active',
       created_at: new Date().toISOString(),
       settings: {},
+      players: (players ?? []).map((p) => ({
+        ...p,
+        match_id,
+        joined_at: new Date().toISOString(),
+      })),
       game: { id: 0, slug: game, name: game, max_players: 2, is_1v1: true, default_time_sec: 60, category: 'competitive' }
     }});
     dispatch({ type: 'SET_SEARCHING', payload: { isSearching: false, game: null } });
   });
   api.onMatchFinished(({ results }) => console.log('[Match] Finished:', results));
-  api.onPlayerJoined(({ player }) => console.log('[Match] Player joined:', player));
-  api.onPlayerLeft(({ player_id }) => console.log('[Match] Player left:', player_id));
+  api.onPlayerJoined(({ match_id, player }) => {
+    console.log('[Match] Player joined:', player);
+    dispatch({ type: 'PLAYER_JOINED', payload: { match_id, player } });
+  });
+  api.onPlayerLeft(({ match_id, player_id }) => {
+    console.log('[Match] Player left:', player_id);
+    dispatch({ type: 'PLAYER_LEFT', payload: { match_id, player_id } });
+  });
   api.onError(({ message }) => console.error('[Socket] Error:', message));
 }
 
@@ -242,7 +283,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   // Rooms: create a room and enter it, or join someone else's by code. Both
   // end in the same place as matchmaking, an active match with a room code.
-  const enterMatch = useCallback((matchId: number, roomCode: string, gameSlug: GameSlug, roomName?: string) => {
+  const enterMatch = useCallback((
+    matchId: number,
+    roomCode: string,
+    gameSlug: GameSlug,
+    roomName?: string,
+    // Who was already in the room when you arrived. player_joined only tells
+    // you about people who come after you.
+    present: { id: number; display_name: string }[] = [],
+  ) => {
     dispatch({ type: 'SET_MATCH', payload: {
       id: matchId,
       room_code: roomCode,
@@ -250,6 +299,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       status: 'active',
       created_at: new Date().toISOString(),
       settings: {},
+      players: present.map((p) => ({
+        ...p,
+        match_id: matchId,
+        joined_at: new Date().toISOString(),
+      })),
       game: { id: 0, slug: gameSlug, name: roomName ?? gameSlug, max_players: 20, is_1v1: false, default_time_sec: 0, category: 'social' }
     }});
     dispatch({ type: 'SET_SEARCHING', payload: { isSearching: false, game: null } });
@@ -260,20 +314,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const createNamedRoom = useCallback(async (gameSlug: GameSlug, name: string) => {
     const room = await api.createRoom(gameSlug, {}, name);
     const joined = await api.joinRoom(room.code);
-    enterMatch(joined.match_id, joined.room_code, joined.game, joined.name);
+    enterMatch(joined.match_id, joined.room_code, joined.game, joined.name, joined.players ?? []);
     return room.code;
   }, [enterMatch]);
 
   const createRoom = useCallback(async (gameSlug: GameSlug) => {
     const room = await api.createRoom(gameSlug, {});
     const joined = await api.joinRoom(room.code);
-    enterMatch(joined.match_id, joined.room_code, joined.game, joined.name);
+    enterMatch(joined.match_id, joined.room_code, joined.game, joined.name, joined.players ?? []);
     return room.code;
   }, [enterMatch]);
 
   const joinRoomByCode = useCallback(async (code: string) => {
     const joined = await api.joinRoom(code.trim().toUpperCase());
-    enterMatch(joined.match_id, joined.room_code, joined.game, joined.name);
+    enterMatch(joined.match_id, joined.room_code, joined.game, joined.name, joined.players ?? []);
   }, [enterMatch]);
 
   // Social: drop into any open channel that is not the one just left, and
@@ -295,7 +349,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     );
     const target = candidate ?? (await api.createRoom(gameSlug, {}));
     const joined = await api.joinRoom(target.code);
-    enterMatch(joined.match_id, joined.room_code, joined.game, joined.name);
+    enterMatch(joined.match_id, joined.room_code, joined.game, joined.name, joined.players ?? []);
   }, [enterMatch, state.currentMatch]);
 
   // Leaving a ranked match early is a forfeit; the server settles it.

@@ -285,6 +285,40 @@ A room disappears once nobody has been in it for `EMPTY_ROOM_TIMEOUT_SECONDS`
   holds while the backend is one replica; more than one needs shared storage
   for it to be a real limit.
 
+## Winning, losing and the ladder
+
+A ranked match produces a winner and moves both ratings. Before this it did
+neither: both results were broadcast side by side, nobody was declared the
+winner, and `User.rating` was read for matchmaking but never written, so
+everybody sat at 1000 forever and the rating preference was a no-op.
+
+- **Higher score wins**, equal scores draw, and the ladder is zero-sum: the
+  points the winner gains are the points the loser drops. K is 32 for the
+  first ten rated games and 16 after, so a new player finds their level fast
+  and then stops swinging.
+- **Forfeiting is a loss.** It is a decision to leave, and it is scored like
+  one. **A dropped connection is a stalemate** and costs nobody rating,
+  because a match must not be winnable by outlasting somebody's wifi.
+- **Guest matches are unrated.** A guest has no rating to lose, so rating
+  those would let an account farm points off people who cannot lose any, and
+  the board would measure who played the most guests.
+- **Rating is a preference, not a gate.** Matchmaking picks the closest
+  rating available and never refuses a match: with one person waiting you
+  pair with them however far apart you are. A small player base must not mean
+  nobody ever plays. Both halves are pinned by tests.
+
+## Who is in the room
+
+The screen has to show the person, not the room code. Membership arrives from
+three places and all three are needed:
+
+- `match_start` and `POST /api/rooms/<code>/join` both return the players who
+  are **already present**, because `player_joined` only ever tells you about
+  people who arrive *after* you. Without this the person who joined a room saw
+  it as empty while the person waiting saw them fine.
+- `player_joined` and `player_left` update `currentMatch.players` in the
+  reducer. They used to reach a `console.log` and nothing else.
+
 ## Judged battles: what the machine decides and what it does not
 
 Rap Battle and Looks Battle have no objective score. Every real battle rap

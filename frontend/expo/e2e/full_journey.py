@@ -137,6 +137,34 @@ with sync_playwright() as p:
         else:
             check("a vote button is offered", False, one_line(one, 200))
 
+    # ---------- JOURNEY 1b: A RANKED MATCH THAT SOMEBODY WINS ----------
+    # Push-ups is the game with a number attached, so it is the one that has
+    # to end with a winner rather than two scores sitting side by side.
+    ra = guest(browser, f"ra{t}")
+    rb = guest(browser, f"rb{t}")
+    to_competitive(ra)
+    ra.get_by_text("Push-Ups", exact=True).click()
+    ra.wait_for_timeout(3000)
+    to_competitive(rb)
+    rb.get_by_text("Push-Ups", exact=True).click()
+    rb.wait_for_timeout(7000)
+    ra.wait_for_timeout(2500)
+
+    in_match = "Ranked 1v1" in body(ra) and "Ranked 1v1" in body(rb)
+    check("both players enter the ranked match", in_match, one_line(ra))
+
+    if in_match:
+        # Forfeiting is the fast, deterministic way to reach a decided result;
+        # waiting out sixty seconds of fake camera would score zero for both.
+        rb.get_by_text("Forfeit", exact=True).first.click()
+        rb.wait_for_timeout(4000)
+        ra.wait_for_timeout(2500)
+        check("forfeiting declares a winner",
+              "You win" in body(ra), one_line(ra, 220))
+        check("the forfeiting player is told they lost",
+              "forfeit" in body(rb).lower() or "lose" in body(rb).lower(),
+              one_line(rb, 220))
+
     # ---------- JOURNEY 2: A LOOKS BATTLE, WHICH IS ONLY A VOTE ----------
     lx = guest(browser, f"lx{t}")
     ly = guest(browser, f"ly{t}")
@@ -188,6 +216,20 @@ with sync_playwright() as p:
           ("A: " + one_line(a, 60) + " || B: " + one_line(b, 60)))
 
     if together:
+        # The screen has to show the person, not just the room. This was the
+        # bug: player_joined only reached a console.log, so the app state never
+        # learned who arrived and both sides kept showing the room code.
+        # Both sides, not either side. The person who joined only hears about
+        # arrivals after them, so a one-sided check passed while half the room
+        # still showed itself as empty.
+        check("the joiner sees who was already there",
+              f"sa{t}" in body(b), one_line(b, 220))
+        check("the waiter sees who arrived",
+              f"sb{t}" in body(a), one_line(a, 220))
+        check("both screens say connected",
+              "Connected" in body(a) and "Connected" in body(b),
+              ("A: " + one_line(a, 90) + " || B: " + one_line(b, 90)))
+
         a.fill("input[placeholder='Add comment...']", "yo")
         a.get_by_text("Post", exact=True).click()
         a.wait_for_timeout(2500)
