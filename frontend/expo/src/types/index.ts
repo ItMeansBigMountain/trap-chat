@@ -57,6 +57,8 @@ export interface Match {
   created_at: string;
   game?: Game;
   players?: MatchPlayer[];
+  /** What the room is called, if it was named or renamed. */
+  name?: string;
 }
 
 export interface MatchSettings {

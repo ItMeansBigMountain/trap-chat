@@ -16,6 +16,10 @@ interface AppState {
   location: { lat: number; lng: number } | null;
   // Which shape of social chat "Random" should look for next.
   socialMode: 'chat1v1' | 'groupchat';
+  // Video is a choice, not a property of the room shape. Groups get it too.
+  videoOn: boolean;
+  /** Mask profanity in messages. On unless somebody turns it off. */
+  profanityFilter: boolean;
 }
 
 const initialState: AppState = {
@@ -26,6 +30,8 @@ const initialState: AppState = {
   searchGame: null,
   location: null,
   socialMode: 'chat1v1',
+  videoOn: true,
+  profanityFilter: true,
 };
 
 // ── Actions ───────────────────────────────────────────────────────
@@ -38,6 +44,9 @@ type Action =
   | { type: 'SET_SEARCHING'; payload: { isSearching: boolean; game: GameSlug | null } }
   | { type: 'SET_LOCATION'; payload: { lat: number; lng: number } }
   | { type: 'SET_SOCIAL_MODE'; payload: AppState['socialMode'] }
+  | { type: 'SET_VIDEO_ON'; payload: boolean }
+  | { type: 'SET_PROFANITY_FILTER'; payload: boolean }
+  | { type: 'ROOM_RENAMED'; payload: { match_id: number; name: string } }
   | { type: 'LOGOUT' };
 
 function reducer(state: AppState, action: Action): AppState {
@@ -82,6 +91,15 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, location: action.payload };
     case 'SET_SOCIAL_MODE':
       return { ...state, socialMode: action.payload };
+    case 'SET_VIDEO_ON':
+      return { ...state, videoOn: action.payload };
+    case 'SET_PROFANITY_FILTER':
+      return { ...state, profanityFilter: action.payload };
+    case 'ROOM_RENAMED': {
+      const current = state.currentMatch;
+      if (!current || current.id !== action.payload.match_id) return state;
+      return { ...state, currentMatch: { ...current, name: action.payload.name } };
+    }
     case 'LOGOUT':
       return { ...state, auth: { status: 'unauthenticated' }, currentMatch: null };
     default:
@@ -110,6 +128,8 @@ interface AppContextValue {
   joinRoomByCode: (code: string) => Promise<void>;
   enterSocial: (gameSlug: GameSlug) => Promise<void>;
   setSocialMode: (mode: AppState['socialMode']) => void;
+  setVideoOn: (on: boolean) => void;
+  setProfanityFilter: (on: boolean) => void;
   forfeit: () => void;
   submitResult: (matchId: number, result: GameResult) => Promise<void>;
   // Match
@@ -138,6 +158,9 @@ function attachSocketListeners(dispatch: React.Dispatch<Action>) {
     dispatch({ type: 'SET_SEARCHING', payload: { isSearching: false, game: null } });
   });
   api.onMatchFinished(({ results }) => console.log('[Match] Finished:', results));
+  api.onRoomRenamed(({ match_id, name }) => {
+    dispatch({ type: 'ROOM_RENAMED', payload: { match_id, name } });
+  });
   api.onPlayerJoined(({ match_id, player }) => {
     console.log('[Match] Player joined:', player);
     dispatch({ type: 'PLAYER_JOINED', payload: { match_id, player } });
@@ -299,6 +322,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       status: 'active',
       created_at: new Date().toISOString(),
       settings: {},
+      name: roomName,
       players: present.map((p) => ({
         ...p,
         match_id: matchId,
@@ -333,6 +357,31 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // Social: drop into any open channel that is not the one just left, and
   // start a fresh one when there is nowhere to go. This is what "next" does,
   // so skipping must never dead-end on an empty lobby.
+  // A choice made once has to survive a reload, or the default overrules it.
+  useEffect(() => {
+    try {
+      const saved = globalThis.localStorage?.getItem('trapchat.profanity');
+      if (saved === 'off') dispatch({ type: 'SET_PROFANITY_FILTER', payload: false });
+    } catch {
+      // Storage unavailable. The default stands.
+    }
+  }, []);
+
+  const setProfanityFilter = useCallback((on: boolean) => {
+    dispatch({ type: 'SET_PROFANITY_FILTER', payload: on });
+    // Remembered per device, so it survives a reload for guests too, who have
+    // no account to hang a preference on.
+    try {
+      globalThis.localStorage?.setItem('trapchat.profanity', on ? 'on' : 'off');
+    } catch {
+      // Storage unavailable. The setting still holds for this session.
+    }
+  }, []);
+
+  const setVideoOn = useCallback((on: boolean) => {
+    dispatch({ type: 'SET_VIDEO_ON', payload: on });
+  }, []);
+
   const setSocialMode = useCallback((mode: AppState['socialMode']) => {
     dispatch({ type: 'SET_SOCIAL_MODE', payload: mode });
   }, []);
@@ -392,7 +441,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       requestLocation,
       fetchGames,
       startSearch, cancelSearch, submitResult,
-      createRoom, createNamedRoom, joinRoomByCode, enterSocial, setSocialMode, forfeit,
+      createRoom, createNamedRoom, joinRoomByCode, enterSocial, setSocialMode, setVideoOn, setProfanityFilter, forfeit,
       joinMatch, leaveMatch,
     }}>
       {children}

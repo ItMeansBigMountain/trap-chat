@@ -5,8 +5,39 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { useApp } from '../context/AppContext';
 
+function Toggle({
+  label,
+  blurb,
+  value,
+  onChange,
+}: {
+  label: string;
+  blurb: string;
+  value: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  return (
+    <TouchableOpacity
+      style={styles.toggle}
+      onPress={() => onChange(!value)}
+      accessibilityRole="switch"
+      accessibilityState={{ checked: value }}
+      accessibilityLabel={label}
+    >
+      <View style={{ flex: 1 }}>
+        <Text style={styles.toggleLabel}>{label}</Text>
+        <Text style={styles.toggleBlurb}>{blurb}</Text>
+      </View>
+      <View style={[styles.switch, value && styles.switchOn]}>
+        {/* Black on lime: white on it is unreadable. */}
+        <Text style={[styles.switchText, value && styles.switchTextOn]}>{value ? 'On' : 'Off'}</Text>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
 export function ProfileScreen() {
-  const { state, setSocialMode, logout } = useApp();
+  const { state, setSocialMode, setVideoOn, setProfanityFilter, logout } = useApp();
 
   const isGuest = state.auth.status === 'guest';
   const name =
@@ -58,6 +89,21 @@ export function ProfileScreen() {
         ))}
       </View>
 
+      {/* SETTINGS */}
+      <Text style={styles.section}>SETTINGS</Text>
+      <Toggle
+        label="Profanity filter"
+        blurb="Mask swearing in messages. This only changes what you see."
+        value={state.profanityFilter}
+        onChange={setProfanityFilter}
+      />
+      <Toggle
+        label="Video"
+        blurb="Use the camera in social rooms, groups included. Turn it off for text only."
+        value={state.videoOn}
+        onChange={setVideoOn}
+      />
+
       {/* THE WAY OUT */}
       <Text style={styles.section}>ACCOUNT</Text>
       <TouchableOpacity style={styles.signOut} onPress={logout}>
@@ -75,6 +121,21 @@ const styles = StyleSheet.create({
   name: { color: '#fff', fontSize: 22, fontWeight: '900', marginTop: 6 },
   kind: { color: '#7B5CFF', fontSize: 12, fontWeight: '700', marginTop: 3 },
   rating: { color: '#a1a1a1', fontSize: 13, marginTop: 8 },
+  toggle: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: '#121212', borderRadius: 8, padding: 14,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', marginBottom: 8,
+  },
+  toggleLabel: { color: '#ffffff', fontWeight: '700', fontSize: 15 },
+  toggleBlurb: { color: '#a1a1a1', fontSize: 11, marginTop: 3, lineHeight: 16 },
+  switch: {
+    paddingHorizontal: 14, paddingVertical: 7, borderRadius: 999,
+    backgroundColor: '#1f1f1f', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)',
+    minWidth: 58, alignItems: 'center',
+  },
+  switchOn: { backgroundColor: '#CCFF00', borderColor: '#CCFF00' },
+  switchText: { color: '#ffffff', fontWeight: '800', fontSize: 12 },
+  switchTextOn: { color: '#000000' },
   notice: { backgroundColor: '#1f1f1f', borderRadius: 8, padding: 14, marginTop: 12 },
   noticeText: { color: '#a1a1a1', fontSize: 12, lineHeight: 18 },
   section: { color: '#a1a1a1', fontSize: 10, letterSpacing: 1.5, fontWeight: '700', marginTop: 22, marginBottom: 10 },

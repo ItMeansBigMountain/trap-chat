@@ -1,5 +1,5 @@
 import 'react-native-gesture-handler';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { AppProvider, useApp } from './src/context/AppContext';
 import { AuthScreen } from './src/screens/AuthScreen';
 import { SocialScreen } from './src/screens/SocialScreen';
@@ -10,7 +10,7 @@ import { ProfileScreen } from './src/screens/ProfileScreen';
 import { MatchScreen } from './src/screens/MatchScreen';
 import { RankedMatchScreen } from './src/screens/RankedMatchScreen';
 import { RapBattleScreen } from './src/screens/RapBattleScreen';
-import { LooksBattleScreen } from './src/screens/LooksBattleScreen';
+import { MogOffScreen } from './src/screens/MogOffScreen';
 import { ShadowBoxScreen } from './src/screens/ShadowBoxScreen';
 import { EXERCISES } from './src/services/repCounter';
 import { ScreenFrame, PageName } from './src/components/ScreenFrame';
@@ -40,6 +40,16 @@ function AppShell() {
   const { state } = useApp();
   const [page, setPage] = useState<PageName>('Random');
 
+  // A competitive match brings you to it. Without this the match would start
+  // on a page you are not looking at, which is indistinguishable from nothing
+  // happening.
+  const liveCompetitive =
+    state.currentMatch &&
+    state.games.find((g) => g.slug === state.currentMatch?.game?.slug)?.category === 'competitive';
+  useEffect(() => {
+    if (liveCompetitive) setPage('Competitive');
+  }, [liveCompetitive]);
+
   if (state.auth.status === 'loading') {
     return (
       <View style={styles.loading}>
@@ -67,34 +77,35 @@ function AppShell() {
   const mode: Mode =
     match && category === 'competitive' ? 'competitive' : PAGE_MODE[page];
 
-  if (match) {
-    if (category === 'competitive') {
-      // Each competitive game is scored differently, so each gets the screen
-      // that can score it. Push-ups and squats are counted from the camera,
-      // a rap battle is timed against a beat and then put to the room, and
-      // Looks Battle still has no scoring of its own.
-      const slug = match.game?.slug ?? '';
-      const screen = EXERCISES[slug] ? (
+  // Each competitive game is scored differently, so each gets the screen that
+  // can score it.
+  const slug = match?.game?.slug ?? '';
+  const matchScreen =
+    match && category === 'competitive' ? (
+      EXERCISES[slug] ? (
         <RankedMatchScreen />
       ) : slug === 'shadowbox' ? (
         <ShadowBoxScreen />
+      ) : slug === 'looks' ? (
+        <MogOffScreen />
       ) : slug === 'rapbattle' ? (
         <RapBattleScreen />
-      ) : slug === 'looks' ? (
-        <LooksBattleScreen />
       ) : (
         <MatchScreen />
-      );
-      return <ModeProvider mode={mode}>{screen}</ModeProvider>;
-    }
-  }
+      )
+    ) : null;
 
+  // A live match is shown on the Competitive page. It used to take the whole
+  // screen over with no frame at all, which left no hamburger and no way out
+  // except forfeiting; the nav is always there now, and the room card in it
+  // is how you get back to a match you navigated away from.
   return (
     <ModeProvider mode={mode}>
       <ScreenFrame title={TITLES[page]} active={page} onNavigate={setPage}>
+      {matchScreen && page === 'Competitive' ? matchScreen : null}
       {page === 'Random' && <SocialScreen />}
       {page === 'Browse' && <BrowseScreen onEntered={() => setPage('Random')} />}
-      {page === 'Competitive' && <CompetitiveScreen />}
+      {page === 'Competitive' && !matchScreen && <CompetitiveScreen />}
       {page === 'Leaderboards' && <LeaderboardScreen />}
       {page === 'Profile' && <ProfileScreen />}
       </ScreenFrame>

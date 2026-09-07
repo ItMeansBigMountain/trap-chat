@@ -30,6 +30,7 @@ import call, { CallState, videoSupported } from '../services/webrtc';
 import { VideoStage } from '../components/VideoStage';
 import { Icon } from '../components/Icon';
 import { useLayout } from '../hooks/useLayout';
+import { filterIf } from '../services/profanity';
 import { T } from '../theme';
 
 const SCREEN_HEIGHT = Dimensions.get('window').height;
@@ -61,9 +62,9 @@ export function SocialScreen() {
   const [muted, setMuted] = useState(false);
   const [cameraOff, setCameraOff] = useState(false);
 
-  // Video is for 1:1 only. A twenty-person group call is a different product
-  // and a different bill.
-  const wantsVideo = state.socialMode === 'chat1v1' && videoSupported();
+  // Video is a switch now, not a property of the room shape: groups get it
+  // too. Turning it off is how you get a text-only room.
+  const wantsVideo = state.videoOn && videoSupported();
 
   const me =
     state.auth.status === 'authenticated'
@@ -276,7 +277,7 @@ export function SocialScreen() {
               ) : (
                 <Text style={styles.msg}>
                   <Text style={styles.from}>{line.from} </Text>
-                  {line.text}
+                  {filterIf(state.profanityFilter, line.text)}
                 </Text>
               )}
             </View>

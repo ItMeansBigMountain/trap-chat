@@ -195,6 +195,13 @@ class ApiService {
     return this.request(`/api/rooms/${code}/join`, { method: 'POST' });
   }
 
+  async renameRoom(code: string, name: string): Promise<{ code: string; name: string }> {
+    return this.request(`/api/rooms/${code}/name`, {
+      method: 'PUT',
+      body: JSON.stringify({ name }),
+    });
+  }
+
   async submitResult(matchId: number, result: GameResult): Promise<{ ok: boolean }> {
     return this.request(`/api/matches/${matchId}/submit`, { method: 'POST', body: JSON.stringify(result) });
   }
@@ -295,6 +302,7 @@ class ApiService {
   // Listening on 'game_state' silently never fires.
   onGameAction(cb: (data: { match_id: number; action: string; payload: Record<string, unknown>; from: string }) => void): () => void { this.socket?.on('game_action', cb); return () => this.socket?.off('game_action', cb); }
   onVoteUpdate(cb: (data: { match_id: number; tally: VoteRow[] }) => void): () => void { this.socket?.on('vote_update', cb); return () => this.socket?.off('vote_update', cb); }
+  onRoomRenamed(cb: (data: { match_id: number; name: string }) => void): () => void { this.socket?.on('room_renamed', cb); return () => this.socket?.off('room_renamed', cb); }
   onError(cb: (data: { message: string; code?: string }) => void): () => void { this.socket?.on('error', cb); return () => this.socket?.off('error', cb); }
 }
 

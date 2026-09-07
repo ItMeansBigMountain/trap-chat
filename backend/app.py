@@ -500,6 +500,9 @@ def validate_result(game, data):
         if score > ceiling:
             return f'score of {score} is not possible in {game.default_time_sec}s'
 
+    if game is not None and game.slug in PERCENT_SCORED_GAMES and score > 100:
+        return f'score of {score} is not possible: symmetry is out of 100'
+
     if game is not None and game.slug in COMBO_SCORED_GAMES:
         window = (game.default_time_sec or 60) + CLOCK_SLACK_SECONDS
         ceiling = window * MAX_PUNCHES_PER_SECOND * MAX_PUNCH_MULTIPLIER
@@ -551,7 +554,7 @@ DEFAULT_GAMES = [
     # Seeded but not offered: see HIDDEN_GAMES.
     {'slug': 'rapbattle', 'name': 'Rap Battle', 'max_players': 2, 'is_1v1': True, 'default_time_sec': 60, 'category': COMPETITIVE},
     # Facial Symmetry and Mog were the same contest under two names.
-    {'slug': 'looks', 'name': 'Looks Battle', 'max_players': 2, 'is_1v1': True, 'default_time_sec': 30, 'category': COMPETITIVE},
+    {'slug': 'looks', 'name': 'Mog Off', 'max_players': 2, 'is_1v1': True, 'default_time_sec': 30, 'category': COMPETITIVE},
     # Social: drop-in channels, browsable and joinable by code, never ranked.
     {'slug': 'chat1v1', 'name': '1:1 Chat', 'max_players': 2, 'is_1v1': True, 'default_time_sec': 0, 'category': SOCIAL},
     {'slug': 'groupchat', 'name': 'Group Chat', 'max_players': 20, 'is_1v1': False, 'default_time_sec': 0, 'category': SOCIAL},
@@ -576,6 +579,10 @@ REP_COUNTED_GAMES = {'pushups', 'squats'}
 MAX_PUNCHES_PER_SECOND = 5
 MAX_PUNCH_MULTIPLIER = 5
 COMBO_SCORED_GAMES = {'shadowbox'}
+
+# Games scored on a fixed 0-100 scale. Anything above 100 did not come from
+# the model.
+PERCENT_SCORED_GAMES = {'looks'}
 
 REPLACED_GAMES = {'symmetry': 'looks', 'mog': 'looks', 'textchat': 'chat1v1', 'ffa': 'groupchat'}
 
@@ -854,6 +861,38 @@ def api_games():
 # -------------------------
 # Matchmaking / Rooms API
 # -------------------------
+@app.route('/api/rooms/<code>/name', methods=['PUT'])
+@guest_or_auth
+def api_rename_room(code):
+    """Rename a room you are in.
+
+    Only somebody present can rename it: a room's name is what people pick it
+    out by in Browse, so letting a passer-by change it would be a way to
+    impersonate a room somebody else built.
+    """
+    room = Room.query.filter_by(code=code).first_or_404()
+    match = Match.query.filter_by(room_code=room.code).first()
+    if match is None:
+        return jsonify({'error': 'no such room'}), 404
+
+    guest_session = guest_session_id()
+    mine = any(
+        (p.user_id == request.user.id if request.user else p.guest_session_id == guest_session)
+        for p in present_players(match)
+    )
+    if not mine:
+        return jsonify({'error': 'only someone in the room can rename it'}), 403
+
+    name = clean_room_name((request.get_json() or {}).get('name'))
+    if not name:
+        return jsonify({'error': 'a room needs a name'}), 400
+
+    room.name = name
+    db.session.commit()
+    socketio.emit('room_renamed', {'match_id': match.id, 'name': name}, to=f'match_{match.id}')
+    return jsonify({'code': room.code, 'name': name})
+
+
 @app.route('/api/matches/quick', methods=['POST'])
 @guest_or_auth
 def api_quick_match():
@@ -1310,10 +1349,11 @@ def settle_match(match, *, forfeited_by=None, reason=None):
 # Judged battles: the audience decides
 # -------------------------
 
-# Games with no objective score. A machine can measure whether someone was on
-# beat; it cannot measure whether the bar was good, so it does not get to say
-# who won.
-JUDGED_GAMES = {'rapbattle', 'looks'}
+# Games with no objective score, settled by the room instead. Mog Off used to
+# be here and is not any more: it measures facial symmetry, which is a real
+# number, so it settles like push-ups do. Voting is kept for the group formats
+# that are coming, where there is genuinely nothing to measure.
+JUDGED_GAMES = {'rapbattle'}
 
 
 def vote_tally(match):

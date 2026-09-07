@@ -134,40 +134,34 @@ with sync_playwright() as p:
         check("forfeiting a boxing match declares a winner",
               "You win" in body(sx), one_line(sx, 220))
 
-    # ---------- JOURNEY 2: A LOOKS BATTLE, WHICH IS ONLY A VOTE ----------
+    # ---------- JOURNEY 2: MOG OFF, WHICH IS MEASURED ----------
     lx = guest(browser, f"lx{t}")
     ly = guest(browser, f"ly{t}")
     to_competitive(lx)
-    lx.get_by_text("Looks Battle", exact=True).click()
+    lx.get_by_text("Mog Off", exact=True).click()
     lx.wait_for_timeout(3000)
     to_competitive(ly)
-    ly.get_by_text("Looks Battle", exact=True).click()
+    ly.get_by_text("Mog Off", exact=True).click()
     ly.wait_for_timeout(7000)
-    lx.wait_for_timeout(2000)
+    lx.wait_for_timeout(2500)
 
-    in_looks = "Go to the vote" in body(lx) and "Go to the vote" in body(ly)
-    check("a looks battle opens its own showcase", in_looks, one_line(lx))
+    in_mog = "Mog Off" in body(lx) and "symmetry" in body(lx).lower()
+    check("mog off opens its own screen", in_mog, one_line(lx, 200))
 
-    if in_looks:
-        for page in (lx, ly):
-            page.get_by_text("Go to the vote", exact=True).click()
-            page.wait_for_timeout(3000)
-        check("the showcase leads to a vote", "The room decides" in body(lx), one_line(lx))
-        check("the two browsers are in the same looks battle",
-              f"ly{t}" in body(lx), one_line(lx, 220))
-        check("looks battle offers no fake score",
-              "YOUR FLOW" not in body(lx), one_line(lx, 200))
-
-        looks_votes = lx.get_by_text("Vote", exact=True)
-        if looks_votes.count():
-            looks_votes.first.click()
-            lx.wait_for_timeout(2500)
-            check("a looks vote registers", "Your vote" in body(lx), one_line(lx, 200))
-            ly.wait_for_timeout(2000)
-            check("the looks tally reaches the other browser",
-                  "1 vote" in body(ly), one_line(ly, 220))
-        else:
-            check("a looks vote button is offered", False, one_line(lx, 200))
+    if in_mog:
+        # It measures symmetry and says so. Claiming to rank faces by how good
+        # they look would be dishonest, so the screen must not imply it.
+        check("it says what it measures",
+              "not how good it looks" in body(lx), one_line(lx, 260))
+        check("there is no vote in it",
+              "Vote" not in body(lx) and "room decides" not in body(lx), one_line(lx, 200))
+        # The hamburger has to be there during a match: that was the bug.
+        check("the nav is reachable during a match",
+              lx.locator('[aria-label="Open menu"]').count() > 0)
+        ly.get_by_text("Forfeit", exact=True).first.click()
+        ly.wait_for_timeout(4000)
+        lx.wait_for_timeout(2500)
+        check("forfeiting a mog off declares a winner", "You win" in body(lx), one_line(lx, 240))
 
     # ---------- JOURNEY 3: TWO STRANGERS IN A SOCIAL CHAT ----------
     a = guest(browser, f"sa{t}")

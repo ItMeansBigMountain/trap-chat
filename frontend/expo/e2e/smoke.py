@@ -33,8 +33,8 @@ PAGE_MARKERS = {
     # The tabs are always there whether or not anybody has scored, which the
     # old markers were not: one named a game that is no longer offered and the
     # other only appears while the board is empty.
-    "Leaderboards": ["Squats", "Looks Battle"],
-    "Profile": ["SIGNED IN AS", "MATCH ME WITH"],
+    "Leaderboards": ["Squats", "Mog Off"],
+    "Profile": ["SIGNED IN AS", "SETTINGS"],
 }
 
 # A page must not leave its content behind when you navigate away.
@@ -196,7 +196,7 @@ def run_for(smoke: Smoke) -> None:
     text = smoke.body()
     smoke.check("competitive offers no room code", "JOIN BY CODE" not in text)
     smoke.check("competitive lists ranked games",
-                all(name in text for name in ("Push-Ups", "Squats", "Looks Battle")), text[:120])
+                all(name in text for name in ("Push-Ups", "Squats", "Shadow Boxing", "Mog Off")), text[:120])
     # Rap Battle is built but held back until it has a turn structure, so it
     # must not be on the board.
     smoke.check("competitive does not offer a held-back game", "Rap Battle" not in text)

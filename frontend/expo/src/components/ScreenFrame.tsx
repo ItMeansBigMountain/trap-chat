@@ -12,10 +12,12 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
+  TextInput,
   Animated,
   Pressable,
   ScrollView,
 } from 'react-native';
+import api from '../services/api';
 import { useApp } from '../context/AppContext';
 import { useLayout } from '../hooks/useLayout';
 import { useAccent } from '../hooks/useAccent';
@@ -39,7 +41,7 @@ export function ScreenFrame({
 }) {
   const { isWide } = useLayout();
   const { accent, ink } = useAccent();
-  const { state, setSocialMode, leaveMatch } = useApp();
+  const { state, setSocialMode, setVideoOn, leaveMatch } = useApp();
   const [open, setOpen] = useState(false);
   const [socialOpen, setSocialOpen] = useState(true);
   const slide = useRef(new Animated.Value(-DRAWER_WIDTH)).current;
@@ -134,6 +136,8 @@ export function ScreenFrame({
       ink={ink}
       state={state}
       setSocialMode={setSocialMode}
+      setVideoOn={setVideoOn}
+      onBackToMatch={() => go('Competitive')}
       onLeave={() => {
         setOpen(false);
         leaveMatch();
@@ -251,22 +255,78 @@ function RoomPanel({
   ink,
   state,
   setSocialMode,
+  setVideoOn,
   onLeave,
+  onBackToMatch,
 }: {
   accent: string;
   ink: string;
   state: ReturnType<typeof useApp>['state'];
   setSocialMode: ReturnType<typeof useApp>['setSocialMode'];
+  setVideoOn: ReturnType<typeof useApp>['setVideoOn'];
   onLeave: () => void;
+  onBackToMatch: () => void;
 }) {
   const match = state.currentMatch;
+  const [renaming, setRenaming] = useState(false);
+  const [draftName, setDraftName] = useState('');
+
+  const saveName = async () => {
+    const name = draftName.trim();
+    setRenaming(false);
+    if (!name || !match?.room_code) return;
+    try {
+      await api.renameRoom(match.room_code, name);
+    } catch {
+      // The old name stands. Not worth an alert over.
+    }
+  };
+
+  const inCompetitive =
+    state.games.find((g) => g.slug === match?.game?.slug)?.category === 'competitive';
   return (
     <View>
       {match ? (
         <View style={styles.nowCard}>
           <Text style={styles.nowLabel}>IN THIS ROOM</Text>
-          <Text style={styles.nowName}>{match.game?.name ?? 'Room'}</Text>
+          {renaming ? (
+            <View style={styles.renameRow}>
+              <TextInput
+                style={styles.renameInput}
+                value={draftName}
+                onChangeText={setDraftName}
+                placeholder="Name this room"
+                placeholderTextColor={T.textDim}
+                autoFocus
+                onSubmitEditing={saveName}
+                accessibilityLabel="Room name"
+              />
+              <TouchableOpacity onPress={saveName} accessibilityLabel="Save room name">
+                <Text style={[styles.renameSave, { color: accent }]}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <TouchableOpacity
+              onPress={() => {
+                setDraftName(match.name ?? match.game?.name ?? '');
+                setRenaming(true);
+              }}
+              accessibilityLabel="Rename room"
+            >
+              <Text style={styles.nowName}>{match.name ?? match.game?.name ?? 'Room'}</Text>
+              <Text style={styles.renameHint}>Tap to rename</Text>
+            </TouchableOpacity>
+          )}
           <Text style={[styles.nowCode, { color: accent }]}>#{match.room_code}</Text>
+          {inCompetitive ? (
+            <TouchableOpacity
+              style={[styles.backToMatch, { backgroundColor: accent }]}
+              onPress={onBackToMatch}
+              accessibilityLabel="Back to match"
+            >
+              <Text style={[styles.backToMatchText, { color: ink }]}>Back to match</Text>
+            </TouchableOpacity>
+          ) : null}
           <TouchableOpacity style={styles.leaveRoom} onPress={onLeave}>
             <Text style={[styles.leaveRoomText, { color: accent }]}>Leave room</Text>
           </TouchableOpacity>
@@ -301,6 +361,15 @@ function RoomPanel({
             </Text>
           </TouchableOpacity>
         ))}
+        <TouchableOpacity
+          style={[styles.pref, state.videoOn && { backgroundColor: accent, borderColor: accent }]}
+          onPress={() => setVideoOn(!state.videoOn)}
+          accessibilityLabel={state.videoOn ? 'Turn video off' : 'Turn video on'}
+        >
+          <Text style={[styles.prefText, state.videoOn && { color: ink }]}>
+            {state.videoOn ? 'Video on' : 'Video off'}
+          </Text>
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -435,6 +504,13 @@ const styles = StyleSheet.create({
   },
   nowLabel: { color: T.textDim, fontSize: 10, letterSpacing: 1.4, fontWeight: '700' },
   nowName: { color: T.text, fontSize: 15, fontWeight: '700', marginTop: 5 },
+  renameHint: { color: T.textFaint, fontSize: 10, marginTop: 1 },
+  renameRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 5 },
+  renameInput: {
+    flex: 1, color: T.text, fontSize: 14, fontWeight: '700',
+    backgroundColor: T.surfaceHi, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 6,
+  },
+  renameSave: { fontWeight: '800', fontSize: 13 },
   nowCode: { color: T.accent, fontSize: 12, letterSpacing: 2, marginTop: 2, fontWeight: '700' },
   nowIdle: { color: T.textDim, fontSize: 12, marginTop: 5 },
   leaveRoom: {
@@ -445,6 +521,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   leaveRoomText: { color: T.accent, fontWeight: '700', fontSize: 13 },
+  backToMatch: { marginTop: 11, paddingVertical: 9, borderRadius: T.radius, alignItems: 'center' },
+  backToMatchText: { fontWeight: '800', fontSize: 13 },
   prefLabel: {
     color: T.textDim,
     fontSize: 10,
@@ -452,7 +530,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginTop: 16,
   },
-  prefRow: { flexDirection: 'row', gap: 8, marginTop: 8 },
+  prefRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
   pref: {
     paddingHorizontal: 16,
     paddingVertical: 8,

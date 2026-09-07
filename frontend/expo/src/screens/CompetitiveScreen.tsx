@@ -20,7 +20,7 @@ const ART: Record<string, { icon: string; blurb: string }> = {
   squats: { icon: '🦵', blurb: 'Deep squat showdown' },
   shadowbox: { icon: '🥊', blurb: 'Punches, and a combo multiplier' },
   rapbattle: { icon: '🎤', blurb: '60s freestyle battle' },
-  looks: { icon: '📏', blurb: 'Symmetry and looksmaxx' },
+  looks: { icon: '📐', blurb: 'Facial symmetry, measured' },
 };
 
 export function CompetitiveScreen() {

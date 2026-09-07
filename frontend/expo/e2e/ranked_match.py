@@ -64,12 +64,12 @@ with sync_playwright() as p:
 
     other = joiner = a = bb = None
     solo = fresh_guest(f"rc{t}")
-    solo.get_by_text("Looks Battle", exact=True).click(); solo.wait_for_timeout(6000)
+    solo.get_by_text("Mog Off", exact=True).click(); solo.wait_for_timeout(6000)
     early = solo.inner_text("body")
     if "Ranked 1v1" in early:
-        print("SKIP  the lone-queue checks: someone else was queued for Looks Battle", flush=True)
+        print("SKIP  the lone-queue checks: someone else was queued for Mog Off", flush=True)
     else:
-        check("a lone queue names the game it is for", "Looks Battle" in early,
+        check("a lone queue names the game it is for", "Mog Off" in early,
               early[:110].replace(chr(10), " | "))
         check("a lone queue says you are the only one",
               "only one in this queue" in early, early[:130].replace(chr(10), " | "))
@@ -88,12 +88,11 @@ with sync_playwright() as p:
 
         # ...and picking the same one pairs them.
         joiner = fresh_guest(f"re{t}")
-        joiner.get_by_text("Looks Battle", exact=True).click(); joiner.wait_for_timeout(7000)
+        joiner.get_by_text("Mog Off", exact=True).click(); joiner.wait_for_timeout(7000)
         solo.wait_for_timeout(3000)
-        # A paired Looks Battle opens its showcase, not the generic ranked
-        # match screen.
+        # A paired Mog Off opens its own screen, not the generic ranked one.
         check("queueing for the same game pairs both sides",
-              "Go to the vote" in joiner.inner_text("body") and "Go to the vote" in solo.inner_text("body"),
+              "Mog Off" in joiner.inner_text("body") and "Mog Off" in solo.inner_text("body"),
               joiner.inner_text("body")[:110].replace(chr(10), " | "))
 
 

@@ -378,6 +378,57 @@ rep, and counting one like the other does not work:
 `PoseTracker` owns the camera, the model and the frame loop and knows nothing
 about what the frames mean, which is what lets both games share all of it.
 
+## Mog Off
+
+Renamed from Looks Battle, and it no longer takes a vote. It measures
+**facial symmetry** from MediaPipe Face Landmarker, and the screen says so in
+as many words. A model cannot rank faces by how good they look, and one
+claiming to would be dishonest as well as unpleasant; symmetry is a real
+geometric property and is what this game was before it got a nickname.
+
+- The midline is the line through the landmarks that sit on it. Each left and
+  right pair is measured against that line, and their **signed** distances are
+  compared -- unsigned would call a face with both eyes shifted the same way
+  perfectly symmetric.
+- Everything is divided by face width, so distance from the camera does not
+  change the score.
+- The result is the **median** of every frame, so one lucky or one terrible
+  frame cannot decide a match.
+- Because the result is a number, it settles like push-ups: higher wins, the
+  ladder moves, no vote involved. Voting stays for the group formats that are
+  coming, where there is genuinely nothing to measure. `JUDGED_GAMES` is now
+  Rap Battle alone.
+
+## The nav is always there
+
+Competitive matches used to render outside `ScreenFrame`, so a match had no
+hamburger and no way out except forfeiting. They render inside it now:
+
+- A live competitive match is the content of the Competitive page, so the
+  drawer, the room card and Leave room are always one tap away.
+- Starting a match navigates you to it, or the match would begin on a page
+  you are not looking at, which is indistinguishable from nothing happening.
+- Navigating away leaves the match running; the room card offers **Back to
+  match**. The match clock is local state, so it currently restarts on the way
+  back -- worth fixing by deriving it from a deadline if this becomes common.
+
+## Video, profanity and room names
+
+- **Video is a switch, not a property of the room shape.** It sits beside 1:1
+  and Groups in the room panel and again in Profile, defaults on, and applies
+  to groups as well. Turning it off is how you get a text-only room.
+- **The profanity filter is on by default** and applied where messages are
+  rendered, not where they are sent: two people in a room can hold different
+  settings, and filtering at the sender would impose one person's choice on
+  the other. It masks rather than deletes, so nobody wonders whether a message
+  failed to arrive, and it matches whole words only. Censoring an ordinary
+  word is a worse failure than missing a rude one, so the tests give
+  Scunthorpe as many cases as the swearing.
+- **A room can be renamed by anyone in it**, and only by them: a name is what
+  people pick a room out by in Browse, so a passer-by renaming it would be a
+  way to impersonate somebody else's room. Everyone in the room is told over
+  `room_renamed`.
+
 ## Judged battles: what the machine decides and what it does not
 
 Rap Battle and Looks Battle have no objective score. Every real battle rap
