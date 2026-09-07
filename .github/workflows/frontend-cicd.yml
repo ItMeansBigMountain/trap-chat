@@ -132,8 +132,10 @@ jobs:
               tail -40 "$RUNNER_TEMP/$name.log"
               echo "::endgroup::"
               # Newlines have to be escaped or the annotation keeps one line.
+              # The last lines verbatim rather than a grep: an exception's
+              # message is the line after Traceback, which a pattern drops.
               local detail
-              detail=$(grep -E "^(FAIL|FAILED|E  |AssertionError|Traceback)" "$RUNNER_TEMP/$name.log" | tail -8 | sed ':a;N;$!ba;s/\n/%0A/g')
+              detail=$(tail -20 "$RUNNER_TEMP/$name.log" | sed ':a;N;$!ba;s/\n/%0A/g')
               echo "::error title=$name failed::${detail:-see the job log}"
               return 1
             fi
