@@ -11,11 +11,21 @@ on:
     paths:
       - 'frontend/expo/**'
       - '.github/workflows/frontend-cicd.yml'
+      # THIS BUILD RUNS THE BACKEND
+      # ITS CHANGES CAN BREAK THIS PIPELINE
+      - 'backend/app.py'
+      - 'backend/e2e/**'
+      - 'backend/requirements.txt'
   # PULL REQUESTS ONLY BUILD
   pull_request:
     paths:
       - 'frontend/expo/**'
       - '.github/workflows/frontend-cicd.yml'
+      # THIS BUILD RUNS THE BACKEND
+      # ITS CHANGES CAN BREAK THIS PIPELINE
+      - 'backend/app.py'
+      - 'backend/e2e/**'
+      - 'backend/requirements.txt'
   # NEW INFRA TRIGGERS REBUILD
   workflow_run:
     workflows: ["infra CICD"]
