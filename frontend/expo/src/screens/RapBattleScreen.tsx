@@ -17,10 +17,11 @@ import {
   ScrollView,
 } from 'react-native';
 import { useApp } from '../context/AppContext';
-import api, { VoteRow } from '../services/api';
+import api from '../services/api';
 import { BEATS, Beat, FlowScorer, FlowResult } from '../services/flowScorer';
 import { BeatMachine } from '../services/beatMachine';
 import { OnsetDetector, micSupported } from '../services/onsetDetector';
+import { VotePanel } from '../components/VotePanel';
 import { useAccent } from '../hooks/useAccent';
 import { T } from '../theme';
 
@@ -39,8 +40,6 @@ export function RapBattleScreen() {
   const [tightness, setTightness] = useState(0);
   const [bars, setBars] = useState(0);
   const [flow, setFlow] = useState<FlowResult | null>(null);
-  const [tally, setTally] = useState<VoteRow[]>([]);
-  const [myVote, setMyVote] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const machine = useRef<BeatMachine | null>(null);
@@ -65,22 +64,6 @@ export function RapBattleScreen() {
   }, []);
 
   useEffect(() => teardown, [teardown]);
-
-  const loadVotes = useCallback(async () => {
-    if (!match) return;
-    try {
-      const votes = await api.getVotes(match.id);
-      setTally(votes.tally);
-      setMyVote(votes.my_vote);
-    } catch (err: any) {
-      setError(err?.message ?? 'Could not load the vote');
-    }
-  }, [match?.id]);
-
-  useEffect(() => {
-    const off = api.onVoteUpdate(({ tally: next }) => setTally(next));
-    return off;
-  }, []);
 
   // ---------- THE TURN ----------
   const startTurn = useCallback(async () => {
@@ -124,7 +107,6 @@ export function RapBattleScreen() {
       setFlow(result);
       teardown();
       setPhase('voting');
-      void loadVotes();
       if (match && result) {
         // The flow score is a stat, not a placing. It is submitted so both
         // sides can see it, and so a tied vote has something to break it.
@@ -138,19 +120,7 @@ export function RapBattleScreen() {
     }
     const tick = setTimeout(() => setLeft((s) => s - 1), 1000);
     return () => clearTimeout(tick);
-  }, [phase, left, teardown, loadVotes, match?.id]);
-
-  const vote = async (playerId: number) => {
-    if (!match) return;
-    setError(null);
-    try {
-      const result = await api.castVote(match.id, playerId);
-      setTally(result.tally);
-      setMyVote(result.my_vote);
-    } catch (err: any) {
-      setError(err?.message ?? 'Could not record that vote');
-    }
-  };
+  }, [phase, left, teardown, match?.id]);
 
   if (!match) {
     return (
@@ -239,7 +209,6 @@ export function RapBattleScreen() {
   }
 
   // ---------- VOTING ----------
-  const total = tally.reduce((sum, row) => sum + row.votes, 0);
   return (
     <ScrollView style={styles.root} contentContainerStyle={styles.content}>
       <Text style={styles.h1}>The room decides</Text>
@@ -260,41 +229,7 @@ export function RapBattleScreen() {
         </View>
       ) : null}
 
-      {tally.map((row) => {
-        const isMe = row.display_name === me;
-        const share = total ? Math.round((row.votes / total) * 100) : 0;
-        return (
-          <View key={row.player_id} style={styles.voteRow}>
-            <View style={styles.voteHead}>
-              <Text style={styles.voteName}>{row.display_name}</Text>
-              <Text style={styles.voteCount}>
-                {row.votes} {row.votes === 1 ? 'vote' : 'votes'}
-              </Text>
-            </View>
-            <View style={styles.voteBar}>
-              <View style={[styles.voteFill, { width: `${share}%`, backgroundColor: accent }]} />
-            </View>
-            <TouchableOpacity
-              style={[
-                styles.voteButton,
-                myVote === row.player_id && { backgroundColor: accent },
-                isMe && styles.voteButtonOff,
-              ]}
-              disabled={isMe}
-              onPress={() => vote(row.player_id)}
-            >
-              <Text style={[styles.voteButtonText, myVote === row.player_id && { color: ink }]}>
-                {isMe ? 'That is you' : myVote === row.player_id ? 'Your vote' : 'Vote'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        );
-      })}
-
-      {error ? <Text style={styles.error}>{error}</Text> : null}
-      <TouchableOpacity style={styles.quiet} onPress={leaveMatch}>
-        <Text style={styles.quietText}>Leave battle</Text>
-      </TouchableOpacity>
+      <VotePanel matchId={match.id} me={me} onLeave={leaveMatch} />
     </ScrollView>
   );
 }

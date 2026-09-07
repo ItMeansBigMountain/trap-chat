@@ -10,6 +10,7 @@ import { ProfileScreen } from './src/screens/ProfileScreen';
 import { MatchScreen } from './src/screens/MatchScreen';
 import { RankedMatchScreen } from './src/screens/RankedMatchScreen';
 import { RapBattleScreen } from './src/screens/RapBattleScreen';
+import { LooksBattleScreen } from './src/screens/LooksBattleScreen';
 import { EXERCISES } from './src/services/repCounter';
 import { ScreenFrame, PageName } from './src/components/ScreenFrame';
 import { ModeProvider } from './src/hooks/useAccent';
@@ -76,6 +77,8 @@ function AppShell() {
         <RankedMatchScreen />
       ) : slug === 'rapbattle' ? (
         <RapBattleScreen />
+      ) : slug === 'looks' ? (
+        <LooksBattleScreen />
       ) : (
         <MatchScreen />
       );

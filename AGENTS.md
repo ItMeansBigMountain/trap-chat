@@ -289,6 +289,10 @@ platform settles that the same way, and so does this one:
   competing can vote: an audience is the point. Games with a real score
   (push-ups, squats) reject votes outright, or the room could overrule the
   leaderboard.
+- **Looks Battle is the vote and nothing else.** A face has no rep count and
+  no beat to be on, so any number an algorithm produced would be invented.
+  The camera is only how you make your case; `LooksBattleScreen` shows both
+  faces for thirty seconds and then hands over to `VotePanel`.
 - **The flow score is a statistic, not a verdict.** It measures whether
   syllables landed on the beat. It cannot tell a good bar from a bad one, and
   claiming otherwise would make the ladder meaningless. It breaks a tied vote
