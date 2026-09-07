@@ -118,6 +118,27 @@ jobs:
           set -e
           python -m pip install --quiet -r backend/requirements.txt playwright requests
           python -m playwright install --with-deps chromium
+          # Run a suite and, if it fails, put its last lines into a GitHub
+          # annotation. Annotations are readable through the API without a
+          # token; raw job logs are not. Without this a red build says only
+          # "exit code 1", which is not enough to fix anything from outside.
+          run_suite() {
+            local name="$1"; shift
+            echo "::group::$name"
+            if "$@" > "$RUNNER_TEMP/$name.log" 2>&1; then
+              tail -3 "$RUNNER_TEMP/$name.log"
+              echo "::endgroup::"
+            else
+              tail -40 "$RUNNER_TEMP/$name.log"
+              echo "::endgroup::"
+              # Newlines have to be escaped or the annotation keeps one line.
+              local detail
+              detail=$(grep -E "^(FAIL|FAILED|E  |AssertionError|Traceback)" "$RUNNER_TEMP/$name.log" | tail -8 | sed ':a;N;$!ba;s/\n/%0A/g')
+              echo "::error title=$name failed::${detail:-see the job log}"
+              return 1
+            fi
+          }
+
           DATABASE_URL="sqlite:///$RUNNER_TEMP/smoke.db" SECRET_KEY=ci-smoke python - <<'PY' &
           from app import app, socketio
           socketio.run(app, host='127.0.0.1', port=8091, allow_unsafe_werkzeug=True)
@@ -126,20 +147,20 @@ jobs:
             curl -sf http://127.0.0.1:8091/api/health >/dev/null && break
             sleep 1
           done
-          python backend/e2e/api_smoke.py http://127.0.0.1:8091 --include-scoring
+          run_suite api_smoke python backend/e2e/api_smoke.py http://127.0.0.1:8091 --include-scoring
           # Build the test bundle into its own directory and reset the
           # bundler cache. Metro keys its cache on sources, not on
           # EXPO_PUBLIC_* values, so reusing dist let this bundle ship.
           ( cd frontend/expo && EXPO_PUBLIC_API_URL=http://127.0.0.1:8091               EXPO_PUBLIC_SOCKET_URL=http://127.0.0.1:8091               npx expo export --platform web --output-dir dist-test --clear )
           python -m http.server 8100 --bind 127.0.0.1 --directory frontend/expo/dist-test &
           sleep 3
-          python frontend/expo/e2e/rep_counter.py http://127.0.0.1:8100/
-          python frontend/expo/e2e/flow_scorer.py http://127.0.0.1:8100/
-          python frontend/expo/e2e/punch_counter.py http://127.0.0.1:8100/
-          python frontend/expo/e2e/profanity_and_face.py http://127.0.0.1:8100/
-          python frontend/expo/e2e/smoke.py http://127.0.0.1:8100/
-          python frontend/expo/e2e/ranked_match.py http://127.0.0.1:8100/
-          python frontend/expo/e2e/full_journey.py http://127.0.0.1:8100/
+          run_suite rep_counter python frontend/expo/e2e/rep_counter.py http://127.0.0.1:8100/
+          run_suite flow_scorer python frontend/expo/e2e/flow_scorer.py http://127.0.0.1:8100/
+          run_suite punch_counter python frontend/expo/e2e/punch_counter.py http://127.0.0.1:8100/
+          run_suite profanity_and_face python frontend/expo/e2e/profanity_and_face.py http://127.0.0.1:8100/
+          run_suite smoke python frontend/expo/e2e/smoke.py http://127.0.0.1:8100/
+          run_suite ranked_match python frontend/expo/e2e/ranked_match.py http://127.0.0.1:8100/
+          run_suite full_journey python frontend/expo/e2e/full_journey.py http://127.0.0.1:8100/
           rm -rf frontend/expo/dist-test
 
       # BAKE BACKEND URL INTO BUNDLE
