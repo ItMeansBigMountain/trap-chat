@@ -1961,6 +1961,105 @@ def api_presence():
     })
 
 
+# A session that is still going is not a return. Without this a page refresh
+# would re-fire "while you were away" against a baseline taken a minute ago,
+# and the one thing this must never do is invent drama.
+AWAY_RESET_MINUTES = 30
+# How many people below you to remember, so we can name the ones who passed.
+# Only the near neighbours matter: being overtaken by somebody twenty places
+# down is not news you were waiting for.
+REMEMBERED_NEIGHBOURS = 20
+
+
+def ladder_standings():
+    """Everyone with a rating that means something, best first.
+
+    An account that has never played a rated match sits at the default, so
+    including them would put hundreds of untouched 1000s in the middle of the
+    ladder and make every rank meaningless.
+    """
+    rated = [u for u in User.query.order_by(User.rating.desc(), User.username).all()
+             if rated_games_played(u) > 0]
+    return rated
+
+
+@app.route('/api/me/catchup', methods=['POST'])
+@auth_required
+def api_catchup():
+    """What changed on the ladder while you were away.
+
+    The app has nothing to say to somebody who already left. A rating is the
+    smallest honest reason to come back -- it moved, or somebody passed you --
+    and it is only worth saying when it is true, so everything here is a fact
+    or it is absent.
+
+    Kept in preferences rather than new columns: production is a live SQLite
+    file on an SMB share and create_all() does not add columns to a table that
+    already exists, so a migration is real work that this does not need.
+    """
+    user = request.user
+    prefs = user.prefs()
+    now = datetime.utcnow()
+
+    standings = ladder_standings()
+    order = [u.username for u in standings]
+    rank = order.index(user.username) + 1 if user.username in order else None
+    below = order[rank:rank + REMEMBERED_NEIGHBOURS] if rank else []
+
+    def take_mark():
+        prefs['ladder_mark'] = {
+            'at': now.isoformat(),
+            'rank': rank,
+            'rating': user.rating,
+            'below': below,
+        }
+
+    seen_raw = prefs.get('seen_at')
+    seen_at = None
+    if seen_raw:
+        try:
+            seen_at = datetime.fromisoformat(seen_raw)
+        except ValueError:
+            seen_at = None
+
+    prefs['seen_at'] = now.isoformat()
+    away_seconds = (now - seen_at).total_seconds() if seen_at else None
+
+    # Still mid-session, or here for the first time. Either way there is
+    # nothing that happened "while you were away".
+    if seen_at is None or away_seconds < AWAY_RESET_MINUTES * 60:
+        if seen_at is None:
+            take_mark()
+        user.set_prefs(prefs)
+        db.session.commit()
+        return jsonify({
+            'returning': False,
+            'rank': rank,
+            'rating': user.rating,
+            'players_ranked': len(order),
+        })
+
+    mark = prefs.get('ladder_mark') or {}
+    passed_by = [name for name in mark.get('below', []) if name in order
+                 and rank is not None and order.index(name) + 1 < rank]
+
+    result = {
+        'returning': True,
+        'away_seconds': int(away_seconds),
+        'rank': rank,
+        'previous_rank': mark.get('rank'),
+        'rating': user.rating,
+        'rating_change': (user.rating - mark['rating']) if 'rating' in mark else None,
+        'passed_by': passed_by,
+        'players_ranked': len(order),
+    }
+
+    take_mark()
+    user.set_prefs(prefs)
+    db.session.commit()
+    return jsonify(result)
+
+
 @app.route('/api/leaderboard/<slug>', methods=['GET'])
 def api_leaderboard(slug):
     game = Game.query.filter_by(slug=slug).first_or_404()

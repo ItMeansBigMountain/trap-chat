@@ -304,6 +304,28 @@ none of it said whether that was bad luck or a dead product.
   sockets, so it is exact on one replica and moves to Redis with everything
   else in [SCALING.md](SCALING.md) before a second.
 
+## A reason to come back
+
+The app had nothing to say to somebody who already left. `POST /api/me/catchup`
+is the smallest honest answer: your rating moved, or somebody passed you on the
+ladder, shown once on the Competitive screen.
+
+- **It never invents drama.** A refresh is not a return, so nothing is reported
+  unless `AWAY_RESET_MINUTES` (30) has passed. Somebody who was always ahead of
+  you did not pass you. Holding your place is said plainly rather than dressed
+  up. An app that manufactures a reason to come back is one you stop believing.
+- **The ladder is only people who have played.** `ladder_standings()` excludes
+  accounts with no rated games, or hundreds of untouched 1000s would sit in the
+  middle of it and make every rank meaningless.
+- **Stored in `preferences_json`, not new columns.** Production is a live
+  SQLite file on an SMB share and `create_all()` does not add columns to a
+  table that already exists, so a schema change is real work this did not need.
+- When it speaks is tested in `backend/tests/test_catchup.py`, where a visit
+  can be aged past the window without waiting. What it says is tested in
+  `e2e/welcome_back.py` against a stubbed response. Doing the second half in a
+  browser would have meant a rating-setting endpoint living in production
+  forever, which is not a trade worth making for a test.
+
 ## Gameplay and scoring
 
 - **Reps are counted in the player's browser** from MediaPipe pose landmarks.
@@ -689,6 +711,11 @@ terraform -chdir=infra/terraform validate
   fails only `smoke.py`'s "no console errors" checks and is not a regression:
   the same suite passes 58/58 against production, which serves under gunicorn.
   Check against the deployed URL before chasing it.
+- **A stubbed cross-origin response must echo the origin.** The app sends
+  `credentials: 'include'`, so `Access-Control-Allow-Origin: *` is rejected by
+  the browser and the response is discarded before any code sees it. Answer the
+  OPTIONS preflight too. Both failures look identical to a feature that simply
+  does not work: the screen stays empty and nothing is logged.
 - **The e2e suites print to a cp1252 console on Windows.** The app is full of
   emoji, so every `check()` encodes its line to ASCII first. Printing raw
   killed a whole run with a `UnicodeEncodeError` that read like a product

@@ -115,8 +115,9 @@ each other. The failure rate is finally being measured; the fix costs money.
 2. ~~**A presence signal.**~~ Shipped. The Social start screen and the
    Competitive cards now say how many people are on and how many are waiting
    for each game, so an empty app reads as quiet rather than broken.
-3. **A reason to return.** Start with the smallest real one: your rating, and
-   who passed you on the leaderboard while you were away.
+3. ~~**A reason to return.**~~ Shipped, in its smallest honest form: coming
+   back to Competitive tells you your rating moved or names who passed you on
+   the ladder, and says nothing at all when nothing happened.
 4. **TURN**, once the measured failure rate says how much it is worth.
 5. **Group competitive**, which is the one thing the third segment is asking
    for and the natural home for the voting that already exists.

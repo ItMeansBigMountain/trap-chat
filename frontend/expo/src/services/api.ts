@@ -42,6 +42,19 @@ export interface QueueState {
   you_are_waiting: boolean;
 }
 
+// What changed on the ladder while you were away. Everything past `returning`
+// is absent unless it is true, so the UI can never invent drama.
+export interface Catchup {
+  returning: boolean;
+  rank: number | null;
+  rating: number;
+  players_ranked: number;
+  away_seconds?: number;
+  previous_rank?: number | null;
+  rating_change?: number | null;
+  passed_by?: string[];
+}
+
 // How many people are actually here. An empty app and a broken app look the
 // same, and this is what tells them apart.
 export interface Presence {
@@ -239,6 +252,10 @@ class ApiService {
       method: 'POST',
       body: JSON.stringify({ game_slug: gameSlug }),
     });
+  }
+
+  async catchup(): Promise<Catchup> {
+    return this.request('/api/me/catchup', { method: 'POST' });
   }
 
   async getPresence(): Promise<Presence> {

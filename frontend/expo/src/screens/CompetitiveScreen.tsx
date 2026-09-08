@@ -12,7 +12,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useApp } from '../context/AppContext';
-import api, { Presence, QueueState } from '../services/api';
+import api, { Catchup, Presence, QueueState } from '../services/api';
 import { GameSlug } from '../types';
 
 const ART: Record<string, { icon: string; blurb: string }> = {
@@ -23,6 +23,61 @@ const ART: Record<string, { icon: string; blurb: string }> = {
   looks: { icon: '📐', blurb: 'Facial symmetry, measured' },
 };
 
+/** How long ago, in words somebody would actually use. */
+function awayFor(seconds: number): string {
+  // "in 3 days" reads as something about to happen. Everything here already
+  // has, so every branch has to be past tense.
+  const days = Math.floor(seconds / 86400);
+  if (days >= 1) return days === 1 ? 'in the last day' : `in the last ${days} days`;
+  const hours = Math.floor(seconds / 3600);
+  if (hours >= 1) return hours === 1 ? 'in the last hour' : `in the last ${hours} hours`;
+  return 'while you were away';
+}
+
+/**
+ * What the ladder did while you were gone.
+ *
+ * Only ever states what happened. A player who held their place is told they
+ * held it, and one whose rating did not move is told nothing about it: an app
+ * that manufactures a reason to come back is one you stop believing, and this
+ * is the only thing here that could be tempted to.
+ */
+function WelcomeBack({ summary, onDismiss }: { summary: Catchup; onDismiss: () => void }) {
+  const passed = summary.passed_by ?? [];
+  const change = summary.rating_change ?? 0;
+  const when = awayFor(summary.away_seconds ?? 0);
+
+  const headline =
+    passed.length === 1
+      ? `${passed[0]} passed you ${when}.`
+      : passed.length > 1
+      ? `${passed.length} players passed you ${when}.`
+      : change > 0
+      ? `You gained ${change} rating ${when}.`
+      : change < 0
+      ? `You lost ${Math.abs(change)} rating ${when}.`
+      : `You held your place ${when}.`;
+
+  const place =
+    summary.rank === null
+      ? null
+      : summary.previous_rank && summary.previous_rank !== summary.rank
+      ? `#${summary.previous_rank} → #${summary.rank} of ${summary.players_ranked}`
+      : `#${summary.rank} of ${summary.players_ranked}`;
+
+  return (
+    <View style={styles.welcome}>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.welcomeTitle}>{headline}</Text>
+        {place ? <Text style={styles.welcomePlace}>{place}</Text> : null}
+      </View>
+      <TouchableOpacity onPress={onDismiss} accessibilityLabel="Dismiss">
+        <Text style={styles.welcomeClose}>✕</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
 export function CompetitiveScreen() {
   const { state, startSearch, cancelSearch } = useApp();
   const [error, setError] = useState<string | null>(null);
@@ -30,6 +85,7 @@ export function CompetitiveScreen() {
   const [queuedFor, setQueuedFor] = useState<GameSlug | null>(null);
   const [queue_, setQueueState] = useState<QueueState | null>(null);
   const [presence, setPresence] = useState<Presence | null>(null);
+  const [welcome, setWelcome] = useState<Catchup | null>(null);
   const competitive = state.games.filter((g) => g.category === 'competitive');
   const isSearching = state.isSearching;
 
@@ -66,6 +122,23 @@ export function CompetitiveScreen() {
       clearInterval(timer);
     };
   }, [isSearching, queuedFor]);
+
+  // Asked once, when there is a ladder to have moved on. The endpoint decides
+  // whether anything actually happened -- a refresh is not a return -- so this
+  // only has to ask and show what comes back.
+  useEffect(() => {
+    if (state.auth.status !== 'authenticated') return;
+    let stopped = false;
+    api
+      .catchup()
+      .then((next) => {
+        if (!stopped && next.returning) setWelcome(next);
+      })
+      .catch(() => {});
+    return () => {
+      stopped = true;
+    };
+  }, [state.auth.status]);
 
   // While choosing a game, not while queued: the queue has its own, sharper
   // count. Knowing three people are waiting for push-ups is the difference
@@ -126,6 +199,8 @@ export function CompetitiveScreen() {
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
+      {welcome ? <WelcomeBack summary={welcome} onDismiss={() => setWelcome(null)} /> : null}
+
       <Text style={styles.lead}>
         Ranked matchmaking. Once a match starts you play it out: forfeit to leave
         early, and a disconnect is a stalemate.
@@ -178,6 +253,20 @@ const styles = StyleSheet.create({
   content: { padding: 18, paddingBottom: 40 },
   lead: { color: '#a1a1a1', fontSize: 13, lineHeight: 19, marginBottom: 10 },
   presence: { color: '#8a8a8a', fontSize: 12, lineHeight: 17, marginBottom: 18 },
+  welcome: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#1a1a1a',
+    borderLeftWidth: 3,
+    borderLeftColor: '#CCFF00',
+    borderRadius: 10,
+    padding: 14,
+    marginBottom: 16,
+  },
+  welcomeTitle: { color: '#fff', fontSize: 14, fontWeight: '800' },
+  welcomePlace: { color: '#a1a1a1', fontSize: 12, marginTop: 3 },
+  welcomeClose: { color: '#8a8a8a', fontSize: 15, fontWeight: '800', paddingHorizontal: 4 },
   queued: {
     flexDirection: 'row',
     alignItems: 'center',
