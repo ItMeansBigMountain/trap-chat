@@ -5,6 +5,7 @@ import * as SecureStore from 'expo-secure-store';
 import * as Location from 'expo-location';
 import api from '../services/api';
 import { User, AuthState, Match, GameResult, GameSlug, GuestSession } from '../types';
+import { clearMatchClock } from '../hooks/useMatchClock';
 
 // ── State ─────────────────────────────────────────────────────────
 interface AppState {
@@ -135,6 +136,7 @@ interface AppContextValue {
   // Match
   joinMatch: (matchId: number) => void;
   leaveMatch: () => void;
+  findNextMatch: () => Promise<void>;
 }
 
 // Socket listeners live outside the component so they can be re-attached after
@@ -419,9 +421,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [enterMatch, state.currentMatch, state.videoOn]);
 
   // Leaving a ranked match early is a forfeit; the server settles it.
+  // Conceding is not leaving. It used to be, which meant the person who
+  // forfeited was out of the room before the result was broadcast and never
+  // saw it -- they were simply dropped back to the lobby. The match stays on
+  // screen now until they choose what to do next.
   const forfeit = useCallback(() => {
-    if (state.currentMatch) api.leaveMatch(state.currentMatch.id);
-    dispatch({ type: 'SET_MATCH', payload: null });
+    if (state.currentMatch) api.forfeitMatch(state.currentMatch.id);
   }, [state.currentMatch]);
 
   const cancelSearch = useCallback(() => {
@@ -450,9 +455,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const leaveMatch = useCallback(() => {
     if (state.currentMatch) {
       api.leaveMatch(state.currentMatch.id);
+      clearMatchClock(state.currentMatch.id);
     }
     dispatch({ type: 'SET_MATCH', payload: null });
   }, [state.currentMatch]);
+
+  /** Leave the match that just ended and queue straight back up for the same
+   *  game. The whole point of a rematch button is not having to go and find
+   *  the game again, so the two steps are one action. */
+  const findNextMatch = useCallback(async () => {
+    const slug = state.currentMatch?.game?.slug as GameSlug | undefined;
+    if (state.currentMatch) {
+      api.leaveMatch(state.currentMatch.id);
+      clearMatchClock(state.currentMatch.id);
+    }
+    dispatch({ type: 'SET_MATCH', payload: null });
+    if (slug) await startSearch(slug);
+  }, [state.currentMatch, startSearch]);
 
   return (
     <AppContext.Provider value={{
@@ -462,7 +481,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       fetchGames,
       startSearch, cancelSearch, submitResult,
       createRoom, createNamedRoom, joinRoomByCode, enterSocial, setSocialMode, setVideoOn, setProfanityFilter, forfeit,
-      joinMatch, leaveMatch,
+      joinMatch, leaveMatch, findNextMatch,
     }}>
       {children}
     </AppContext.Provider>

@@ -2201,6 +2201,34 @@ def on_leave_match(data):
     }, to=f'match_{match_id}')
 
 
+@socketio.on('forfeit_match')
+def on_forfeit_match(data):
+    """Concede, and stay to see the result.
+
+    Forfeiting used to be the same event as leaving, and leave_match calls
+    leave_room() before the match settles -- so whoever forfeited was already
+    out of the room when the result was broadcast and never saw it. They were
+    dropped back to the lobby with no idea what had happened, while the person
+    who beat them got a whole screen about it.
+
+    Conceding and leaving are two decisions now, and this is only the first.
+    The seat is deliberately not released: they are still here, watching.
+    """
+    match_id = data.get('match_id') if isinstance(data, dict) else None
+    player = require_socket_player(match_id)
+    if not player:
+        return
+    match = db.session.get(Match, match_id)
+    if match is None or match.status != 'active':
+        # Already over, by their own hand or the clock. Nothing to concede,
+        # and settling twice would move ratings twice.
+        return
+    if match.game is not None and match.game.category != COMPETITIVE:
+        emit('error', {'message': 'nothing to forfeit', 'code': 'not_competitive'})
+        return
+    settle_match(match, forfeited_by=player, reason='forfeit')
+
+
 @socketio.on('game_action')
 def on_game_action(data):
     match_id = data.get('match_id') if isinstance(data, dict) else None

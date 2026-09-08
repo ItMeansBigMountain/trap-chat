@@ -19,6 +19,7 @@ import {
   Platform,
 } from 'react-native';
 import { useApp } from '../context/AppContext';
+import { MatchOutcome } from '../components/MatchOutcome';
 import { useMatchClock, clearMatchClock } from '../hooks/useMatchClock';
 import api from '../services/api';
 import call, { videoSupported } from '../services/webrtc';
@@ -47,7 +48,7 @@ function Camera({ stream, onReady }: { stream: MediaStream | null; onReady: (el:
 }
 
 export function MogOffScreen() {
-  const { state, forfeit, submitResult } = useApp();
+  const { state, forfeit, submitResult, findNextMatch, leaveMatch } = useApp();
   const { accent, ink } = useAccent();
   const match = state.currentMatch;
   const duration = match?.game?.default_time_sec || 30;
@@ -173,7 +174,10 @@ export function MogOffScreen() {
           <Text style={styles.game}>Mog Off</Text>
           <Text style={styles.sub}>Facial symmetry, measured</Text>
         </View>
-        <Text style={[styles.clock, secondsLeft <= 5 && { color: T.danger }]}>{secondsLeft}s</Text>
+        {/* A match that is over has no time left in it. */}
+        <Text style={[styles.clock, !finished && secondsLeft <= 5 && { color: T.danger }]}>
+          {finished ? 'Over' : `${secondsLeft}s`}
+        </Text>
       </View>
 
       <View style={styles.scores}>
@@ -209,9 +213,7 @@ export function MogOffScreen() {
       </Text>
 
       {finished ? (
-        <View style={styles.done}>
-          <Text style={styles.doneText}>{outcome ?? 'Match finished.'}</Text>
-        </View>
+        <MatchOutcome outcome={outcome} onNext={findNextMatch} onBack={leaveMatch} />
       ) : (
         <TouchableOpacity style={[styles.forfeit, { backgroundColor: accent }]} onPress={forfeit}>
           <Text style={[styles.forfeitText, { color: ink }]}>Forfeit</Text>

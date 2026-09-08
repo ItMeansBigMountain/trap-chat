@@ -363,6 +363,11 @@ class ApiService {
     this.socket?.emit('join_match', { match_id: matchId });
   }
 
+  /** Concede without leaving, so the result can be read before deciding. */
+  forfeitMatch(matchId: number): void {
+    this.socket?.emit('forfeit_match', { match_id: matchId });
+  }
+
   leaveMatch(matchId: number): void {
     if (this.currentMatchId === matchId) this.currentMatchId = null;
     this.socket?.emit('leave_match', { match_id: matchId });

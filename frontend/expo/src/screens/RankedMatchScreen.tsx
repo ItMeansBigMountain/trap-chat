@@ -12,6 +12,7 @@ import {
   Platform,
 } from 'react-native';
 import { useApp } from '../context/AppContext';
+import { MatchOutcome } from '../components/MatchOutcome';
 import { useMatchClock, clearMatchClock } from '../hooks/useMatchClock';
 import api from '../services/api';
 import call, { videoSupported } from '../services/webrtc';
@@ -39,7 +40,7 @@ function Camera({ stream, onReady }: { stream: MediaStream | null; onReady: (el:
 }
 
 export function RankedMatchScreen() {
-  const { state, forfeit, submitResult } = useApp();
+  const { state, forfeit, submitResult, findNextMatch, leaveMatch } = useApp();
   const match = state.currentMatch;
   const slug = match?.game?.slug ?? '';
   const spec = EXERCISES[slug];
@@ -173,7 +174,11 @@ export function RankedMatchScreen() {
           <Text style={styles.game}>{spec?.label ?? match.game?.name ?? 'Ranked match'}</Text>
           <Text style={styles.sub}>Ranked 1v1</Text>
         </View>
-        <Text style={[styles.clock, secondsLeft <= 10 && styles.clockLow]}>{secondsLeft}s</Text>
+        {/* A match that is over has no time left in it. Letting the clock
+            run on past the result made a finished match look still live. */}
+        <Text style={[styles.clock, !finished && secondsLeft <= 10 && styles.clockLow]}>
+          {finished ? 'Over' : `${secondsLeft}s`}
+        </Text>
       </View>
 
       <View style={styles.scores}>
@@ -210,12 +215,7 @@ export function RankedMatchScreen() {
       {hint ? <Text style={styles.hint}>{hint}</Text> : null}
 
       {finished ? (
-        <View style={styles.done}>
-          <Text style={styles.doneText}>{outcome ?? 'Match finished.'}</Text>
-          <TouchableOpacity style={styles.leave} onPress={forfeit}>
-            <Text style={styles.leaveText}>Back to lobby</Text>
-          </TouchableOpacity>
-        </View>
+        <MatchOutcome outcome={outcome} onNext={findNextMatch} onBack={leaveMatch} />
       ) : (
         <TouchableOpacity style={styles.forfeit} onPress={forfeit}>
           <Text style={styles.forfeitText}>Forfeit</Text>

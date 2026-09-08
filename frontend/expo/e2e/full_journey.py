@@ -146,9 +146,39 @@ with sync_playwright() as p:
         ra.wait_for_timeout(2500)
         check("forfeiting declares a winner",
               "You win" in body(ra), one_line(ra, 220))
-        check("the forfeiting player is told they lost",
-              "forfeit" in body(rb).lower() or "lose" in body(rb).lower(),
-              one_line(rb, 220))
+
+        # The forfeiting player used to be thrown out before the result was
+        # broadcast, so this checked the lobby's own copy -- which contains
+        # the word "forfeit" -- and passed while the feature did nothing.
+        # It has to be the result, on the match screen they are still on.
+        check("the forfeiting player is told they lost, on the match screen",
+              "You forfeited" in body(rb), one_line(rb, 220))
+        check("the forfeiting player is not thrown out of the room",
+              "Match over" in rb.inner_text("body") or
+              rb.get_by_label("Match over").count() > 0,
+              one_line(rb, 160))
+
+        # Both of them get the same two ways out.
+        for who, page in (("winner", ra), ("forfeiter", rb)):
+            check(f"the {who} is offered a next match",
+                  page.get_by_label("Find next match").count() > 0, one_line(page, 160))
+            check(f"the {who} is offered a way back to the game modes",
+                  page.get_by_label("Back to game modes").count() > 0, one_line(page, 160))
+
+        # And the rematch button actually queues, rather than only leaving.
+        ra.get_by_label("Find next match").first.click()
+        ra.wait_for_timeout(4000)
+        check("find next match puts you back in the queue",
+              "Finding an opponent" in body(ra) or "queue" in body(ra).lower(),
+              one_line(ra, 200))
+        ra.get_by_text("Cancel", exact=True).first.click()
+        ra.wait_for_timeout(1500)
+
+        rb.get_by_label("Back to game modes").first.click()
+        rb.wait_for_timeout(2500)
+        check("back to game modes leaves the match",
+              "Ranked matchmaking" in body(rb) and "You forfeited" not in body(rb),
+              one_line(rb, 160))
 
     close(one, ra, rb)
 

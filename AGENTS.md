@@ -288,6 +288,29 @@ A test that inserts a `waiting` Match row directly has bypassed the endpoint
 that would have stamped it, so it must call `touch_match_presence()` itself or
 matchmaking will correctly refuse to offer its fictional opponent.
 
+## When a match ends
+
+Conceding and leaving are two different decisions, and the split matters.
+
+- `forfeit_match` settles the match and leaves the player in the room.
+  `leave_match` releases the seat. They used to be the same event, and because
+  `leave_match` calls `leave_room()` *before* the match settles, whoever
+  forfeited was out of the room when the result was broadcast and never saw
+  it -- they were dropped to the lobby knowing nothing, while the winner got a
+  whole screen about it.
+- Leaving mid-match without conceding is still scored as a forfeit. Splitting
+  the events must not open a way to walk out for free, and a test pins it.
+- Settling twice would move rating twice, so `forfeit_match` returns early
+  unless the match is still `active`. The button stays on screen until they
+  leave, so it can be pressed again.
+- `MatchOutcome` is the one panel every competitive game ends with: the result,
+  **Find next match**, and **Back to game modes**. Shadow Boxing and Mog Off
+  previously ended with text and no way out at all. Playing again is the
+  primary action because it is what somebody who just finished a match wants,
+  and it queues in one tap rather than making them find the game again.
+- The clock reads `Over` once a match is finished. Letting it run past the
+  result made a finished match look live.
+
 ## Presence, and saying whether anybody is here
 
 `GET /api/presence` returns `online`, `waiting` per competitive game, and
