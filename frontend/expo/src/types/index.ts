@@ -59,6 +59,8 @@ export interface Match {
   players?: MatchPlayer[];
   /** What the room is called, if it was named or renamed. */
   name?: string;
+  /** Whether this room uses the camera. Set by whoever made it. */
+  video?: boolean;
 }
 
 export interface MatchSettings {

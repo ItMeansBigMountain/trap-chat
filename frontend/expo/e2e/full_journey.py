@@ -95,6 +95,27 @@ with sync_playwright() as p:
     one = guest(browser, f"mc{t}")
     one.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
 
+    # ---------- JOURNEY 1a: THE SOCKET IS OPENED ONCE, NOT REPEATEDLY ----------
+    # Reconnect churn was reported and never explained. One connect on boot and
+    # one resync when the session changes is correct; anything beyond that is
+    # the bug, so the count is pinned rather than left to be noticed again.
+    sockets = []
+    sock_page = browser.new_context(
+        viewport={"width": 430, "height": 900}, is_mobile=True, has_touch=True,
+        permissions=["camera", "microphone"],
+    ).new_page()
+    sock_page.on("console", lambda m: sockets.append(m.text))
+    sock_page.goto(APP, wait_until="networkidle", timeout=90000)
+    sock_page.wait_for_timeout(2500)
+    sock_page.fill("input[placeholder='Pick a name (optional)']", f"sk{t}")
+    sock_page.get_by_text("Continue as guest", exact=True).click()
+    sock_page.wait_for_timeout(7000)
+    connects = sum("[Socket] Connected" in line for line in sockets)
+    drops = sum("[Socket] Disconnected" in line for line in sockets)
+    check("the socket connects twice at most: boot, then the session change",
+          connects <= 2 and drops <= 1, f"{connects} connects, {drops} disconnects")
+    close(sock_page)
+
     # ---------- JOURNEY 1b: A RANKED MATCH THAT SOMEBODY WINS ----------
     # Push-ups is the game with a number attached, so it is the one that has
     # to end with a winner rather than two scores sitting side by side.

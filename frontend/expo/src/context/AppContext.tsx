@@ -124,7 +124,7 @@ interface AppContextValue {
   cancelSearch: () => void;
   // Rooms
   createRoom: (gameSlug: GameSlug) => Promise<string>;
-  createNamedRoom: (gameSlug: GameSlug, name: string) => Promise<string>;
+  createNamedRoom: (gameSlug: GameSlug, name: string, video?: boolean) => Promise<string>;
   joinRoomByCode: (code: string) => Promise<void>;
   enterSocial: (gameSlug: GameSlug) => Promise<void>;
   setSocialMode: (mode: AppState['socialMode']) => void;
@@ -314,6 +314,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     // Who was already in the room when you arrived. player_joined only tells
     // you about people who come after you.
     present: { id: number; display_name: string }[] = [],
+    // The room's own choice, which overrides your switch: joining a text room
+    // must not turn it into a video call because your camera is on.
+    roomVideo = true,
   ) => {
     dispatch({ type: 'SET_MATCH', payload: {
       id: matchId,
@@ -323,6 +326,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       created_at: new Date().toISOString(),
       settings: {},
       name: roomName,
+      video: roomVideo,
       players: present.map((p) => ({
         ...p,
         match_id: matchId,
@@ -335,23 +339,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   // Open a room under a chosen name and step straight into it.
-  const createNamedRoom = useCallback(async (gameSlug: GameSlug, name: string) => {
-    const room = await api.createRoom(gameSlug, {}, name);
+  const createNamedRoom = useCallback(async (gameSlug: GameSlug, name: string, video = true) => {
+    const room = await api.createRoom(gameSlug, {}, name, video);
     const joined = await api.joinRoom(room.code);
-    enterMatch(joined.match_id, joined.room_code, joined.game, joined.name, joined.players ?? []);
+    enterMatch(joined.match_id, joined.room_code, joined.game, joined.name, joined.players ?? [], joined.video ?? true);
     return room.code;
-  }, [enterMatch]);
+  }, [enterMatch, state.videoOn]);
 
   const createRoom = useCallback(async (gameSlug: GameSlug) => {
-    const room = await api.createRoom(gameSlug, {});
+    const room = await api.createRoom(gameSlug, {}, undefined, state.videoOn);
     const joined = await api.joinRoom(room.code);
-    enterMatch(joined.match_id, joined.room_code, joined.game, joined.name, joined.players ?? []);
+    enterMatch(joined.match_id, joined.room_code, joined.game, joined.name, joined.players ?? [], joined.video ?? true);
     return room.code;
   }, [enterMatch]);
 
   const joinRoomByCode = useCallback(async (code: string) => {
     const joined = await api.joinRoom(code.trim().toUpperCase());
-    enterMatch(joined.match_id, joined.room_code, joined.game, joined.name, joined.players ?? []);
+    enterMatch(joined.match_id, joined.room_code, joined.game, joined.name, joined.players ?? [], joined.video ?? true);
   }, [enterMatch]);
 
   // Social: drop into any open channel that is not the one just left, and
@@ -396,10 +400,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const candidate = (rooms as unknown as { code: string; game: string }[]).find(
       (room) => room.game === gameSlug && room.code !== leavingCode,
     );
-    const target = candidate ?? (await api.createRoom(gameSlug, {}));
+    // Random opens rooms that match your own switch; joining someone
+    // else's takes theirs.
+    const target = candidate ?? (await api.createRoom(gameSlug, {}, undefined, state.videoOn));
     const joined = await api.joinRoom(target.code);
-    enterMatch(joined.match_id, joined.room_code, joined.game, joined.name, joined.players ?? []);
-  }, [enterMatch, state.currentMatch]);
+    enterMatch(joined.match_id, joined.room_code, joined.game, joined.name, joined.players ?? [], joined.video ?? true);
+  }, [enterMatch, state.currentMatch, state.videoOn]);
 
   // Leaving a ranked match early is a forfeit; the server settles it.
   const forfeit = useCallback(() => {

@@ -47,6 +47,8 @@ export interface SocialRoom {
   name: string;
   game: GameSlug;
   game_name: string;
+  /** Whether the room uses the camera. Text rooms do not. */
+  video: boolean;
   player_count: number;
   max_players: number;
   players: { display_name: string }[];
@@ -180,10 +182,15 @@ class ApiService {
     return this.request('/api/matches/quick', { method: 'POST', body: JSON.stringify(request) });
   }
 
-  async createRoom(gameSlug: GameSlug, settings: MatchSettings, name?: string): Promise<{ code: string; name: string; game: GameSlug; settings: MatchSettings }> {
+  async createRoom(
+    gameSlug: GameSlug,
+    settings: MatchSettings,
+    name?: string,
+    video = true,
+  ): Promise<{ code: string; name: string; game: GameSlug; settings: MatchSettings }> {
     return this.request('/api/rooms', {
       method: 'POST',
-      body: JSON.stringify({ game_slug: gameSlug, settings, name: name ?? '' }),
+      body: JSON.stringify({ game_slug: gameSlug, settings, name: name ?? '', video }),
     });
   }
 
@@ -191,7 +198,7 @@ class ApiService {
     return this.request('/api/rooms');
   }
 
-  async joinRoom(code: string): Promise<{ match_id: number; room_code: string; game: GameSlug; name?: string; game_name?: string; players?: { id: number; display_name: string }[] }> {
+  async joinRoom(code: string): Promise<{ match_id: number; room_code: string; game: GameSlug; name?: string; game_name?: string; video?: boolean; players?: { id: number; display_name: string }[] }> {
     return this.request(`/api/rooms/${code}/join`, { method: 'POST' });
   }
 
@@ -233,7 +240,12 @@ class ApiService {
   }
 
   connect(): Socket {
-    if (this.socket?.connected) return this.socket;
+    // Any existing socket, not only a connected one. Guarding on `connected`
+    // meant calling connect() while the previous handshake was still in
+    // flight built a second socket and abandoned the first, which then
+    // finished connecting on its own: two live sockets for one client, and a
+    // console full of connects and disconnects nobody asked for.
+    if (this.socket) return this.socket;
     this.socket = io(backendUrl(SOCKET_URL, 'EXPO_PUBLIC_SOCKET_URL'), {
       transports: ['websocket', 'polling'],
       autoConnect: true,

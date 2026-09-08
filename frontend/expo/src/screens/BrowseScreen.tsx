@@ -23,6 +23,7 @@ export function BrowseScreen({ onEntered }: { onEntered?: () => void }) {
   const [busy, setBusy] = useState(false);
   const [code, setCode] = useState('');
   const [newName, setNewName] = useState('');
+  const [newVideo, setNewVideo] = useState(true);
   const [mode, setMode] = useState<'chat1v1' | 'groupchat'>('groupchat');
   const [error, setError] = useState<string | null>(null);
 
@@ -105,10 +106,27 @@ export function BrowseScreen({ onEntered }: { onEntered?: () => void }) {
           </TouchableOpacity>
         ))}
       </View>
+      <View style={styles.modeRow}>
+        {([
+          { on: true, label: 'Video room', blurb: 'Camera on' },
+          { on: false, label: 'Text room', blurb: 'No camera' },
+        ]).map((option) => (
+          <TouchableOpacity
+            key={option.label}
+            style={[styles.mode, newVideo === option.on && styles.modeActive]}
+            onPress={() => setNewVideo(option.on)}
+            accessibilityLabel={option.label}
+          >
+            <Text style={[styles.modeText, newVideo === option.on && styles.modeTextActive]}>
+              {option.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
       <TouchableOpacity
         style={[styles.primaryWide, busy && styles.disabled]}
         disabled={busy}
-        onPress={() => run(() => createNamedRoom(mode as GameSlug, newName))}
+        onPress={() => run(() => createNamedRoom(mode as GameSlug, newName, newVideo))}
       >
         <Text style={styles.primaryText}>Create and join</Text>
       </TouchableOpacity>
@@ -136,7 +154,14 @@ export function BrowseScreen({ onEntered }: { onEntered?: () => void }) {
               onPress={() => run(() => joinRoomByCode(room.code))}
             >
               <View style={{ flex: 1 }}>
-                <Text style={styles.roomName}>{room.name}</Text>
+                <View style={styles.roomTitleRow}>
+                  <Text style={styles.roomName}>{room.name}</Text>
+                  <View style={[styles.badge, room.video && styles.badgeVideo]}>
+                    <Text style={[styles.badgeText, room.video && styles.badgeTextVideo]}>
+                      {room.video ? 'VIDEO' : 'TEXT'}
+                    </Text>
+                  </View>
+                </View>
                 <Text style={styles.roomMeta}>
                   {room.game_name} · {room.player_count}/{room.max_players}
                   {room.players.length ? ` · ${room.players.map((p) => p.display_name).join(', ')}` : ''}
@@ -153,6 +178,14 @@ export function BrowseScreen({ onEntered }: { onEntered?: () => void }) {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#000000' },
+  roomTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  badge: {
+    paddingHorizontal: 7, paddingVertical: 2, borderRadius: 4,
+    backgroundColor: '#1f1f1f', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)',
+  },
+  badgeVideo: { backgroundColor: '#7B5CFF', borderColor: '#7B5CFF' },
+  badgeText: { color: '#a1a1a1', fontSize: 9, fontWeight: '800', letterSpacing: 0.8 },
+  badgeTextVideo: { color: '#ffffff' },
   content: { padding: 18, paddingBottom: 44 },
   section: { color: '#a1a1a1', fontSize: 10, letterSpacing: 1.5, fontWeight: '700', marginTop: 18, marginBottom: 9 },
   row: { flexDirection: 'row', gap: 10 },

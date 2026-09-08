@@ -62,9 +62,10 @@ export function SocialScreen() {
   const [muted, setMuted] = useState(false);
   const [cameraOff, setCameraOff] = useState(false);
 
-  // Video is a switch now, not a property of the room shape: groups get it
-  // too. Turning it off is how you get a text-only room.
-  const wantsVideo = state.videoOn && videoSupported();
+  // The room decides. A room created as text stays text however anyone's own
+  // switch is set; your switch only chooses what Random looks for.
+  const roomIsVideo = match?.video ?? state.videoOn;
+  const wantsVideo = roomIsVideo && videoSupported();
 
   const me =
     state.auth.status === 'authenticated'

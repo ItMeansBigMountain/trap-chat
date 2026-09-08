@@ -1037,6 +1037,21 @@ def api_quick_match():
     })
 
 
+def room_is_video(room):
+    """Does this room use the camera?
+
+    A property of the room rather than of whoever is browsing: someone joining
+    a text room should not turn it into a video call because their own switch
+    happens to be on. Stored in settings so it needs no new column, and
+    defaults to video, which is what most rooms are.
+    """
+    try:
+        settings = json.loads(room.settings_json or '{}')
+    except (TypeError, ValueError):
+        return True
+    return bool(settings.get('video', True))
+
+
 def room_occupants(room):
     match = Match.query.filter_by(room_code=room.code).first()
     if match is None:
@@ -1057,6 +1072,7 @@ def api_list_rooms():
             'game': r.game.slug,
             'game_name': r.game.name,
             'settings': json.loads(r.settings_json or '{}'),
+            'video': room_is_video(r),
             'player_count': len(occupants),
             'max_players': r.game.max_players,
             'players': [{'display_name': p.display_name} for p in occupants],
@@ -1076,7 +1092,10 @@ def api_create_room():
     # arrange ranked results between themselves.
     if game.category == COMPETITIVE:
         return jsonify({'error': 'competitive games use matchmaking, not room codes'}), 400
-    settings = data.get('settings', {})
+    settings = dict(data.get('settings') or {})
+    # Explicit, and defaulting to video: a room created without saying is the
+    # kind the app is mostly for.
+    settings['video'] = bool(data.get('video', settings.get('video', True)))
     room = Room(
         code=gen_room_code(),
         game_id=game.id,
@@ -1159,6 +1178,7 @@ def api_join_room(code):
         'match_id': match.id,
         'room_code': room.code,
         'game': room.game.slug,
+        'video': room_is_video(room),
         'name': room.name or f'{room.game.name} {room.code[:4]}',
         'game_name': room.game.name,
     })

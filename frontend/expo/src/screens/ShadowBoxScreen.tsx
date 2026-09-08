@@ -16,6 +16,7 @@ import {
   Platform,
 } from 'react-native';
 import { useApp } from '../context/AppContext';
+import { useMatchClock, clearMatchClock } from '../hooks/useMatchClock';
 import api from '../services/api';
 import call, { videoSupported } from '../services/webrtc';
 import poseTracker, { TrackerState } from '../services/poseTracker';
@@ -66,7 +67,8 @@ export function ShadowBoxScreen() {
   const [tracker, setTracker] = useState<TrackerState>('idle');
   const [trackerDetail, setTrackerDetail] = useState<string | undefined>();
   const [opponentScore, setOpponentScore] = useState(0);
-  const [secondsLeft, setSecondsLeft] = useState(duration);
+  // Counted from a deadline, so navigating away and back does not restart it.
+  const secondsLeft = useMatchClock(match?.id, duration);
   const [finished, setFinished] = useState(false);
   const [outcome, setOutcome] = useState<string | null>(null);
   const startedRef = useRef(false);
@@ -155,6 +157,7 @@ export function ShadowBoxScreen() {
     if (finished || !match) return;
     if (secondsLeft <= 0) {
       setFinished(true);
+      clearMatchClock(match.id);
       poseTracker.stop();
       const final = scoreRef.current;
       submitResult(match.id, { score: final, rep_count: punches, duration_sec: duration })
@@ -162,8 +165,6 @@ export function ShadowBoxScreen() {
         .catch(() => setOutcome('Time, but the score could not be saved.'));
       return;
     }
-    const timer = setTimeout(() => setSecondsLeft((s) => s - 1), 1000);
-    return () => clearTimeout(timer);
   }, [secondsLeft, finished, match?.id, punches, duration, submitResult]);
 
   if (!match) return null;

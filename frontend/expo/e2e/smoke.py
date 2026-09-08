@@ -177,6 +177,13 @@ def run_for(smoke: Smoke) -> None:
     # Browse must remain reachable while in a room, not redirect back to it.
     smoke.goto("Browse")
     smoke.check("Browse reachable while in a room", "JOIN BY CODE" in smoke.body(), smoke.body()[:120].replace("\n", " | "))
+    # A listed room has to say which kind it is before you commit to joining.
+    browse = smoke.body()
+    smoke.check("Browse offers video and text rooms",
+                "Video room" in browse and "Text room" in browse,
+                browse[:160].replace(chr(10), " | "))
+    smoke.check("listed rooms are labelled video or text",
+                "VIDEO" in browse or "TEXT" in browse, browse[:220].replace(chr(10), " | "))
 
     for name in ["Competitive", "Leaderboards", "Profile"]:
         smoke.goto(name)
@@ -203,6 +210,46 @@ def run_for(smoke: Smoke) -> None:
 
     # --- CONSOLE ------------------------------------------------------
     smoke.check("no console errors", not smoke.console_errors, "; ".join(smoke.console_errors[:2]))
+
+
+def run_small_phone(smoke: Smoke) -> None:
+    """A 360x640 Android, smaller than the 390x844 the main pass uses.
+
+    Most people are on a phone, and a phone's failures are layout failures: a
+    page wider than the screen, a control pushed off the bottom, a tap target
+    too small to hit. None of those raise an exception, so they get measured.
+    """
+    page = smoke.page
+    page.goto(TARGET, wait_until="networkidle", timeout=90000)
+    page.wait_for_timeout(2500)
+    smoke.sign_in_as_guest("tiny")
+
+    for name in PAGES:
+        smoke.goto(name)
+        text = smoke.body()
+        smoke.check(f"phone: {name} renders",
+                    any(marker in text for marker in PAGE_MARKERS[name]),
+                    text[:110].replace(chr(10), " | "))
+        # Nothing may be wider than the screen. A sideways scrollbar on a phone
+        # means something is cut off and unreachable.
+        overflow = page.evaluate(
+            "() => document.documentElement.scrollWidth - document.documentElement.clientWidth"
+        )
+        smoke.check(f"phone: {name} does not scroll sideways", overflow <= 1,
+                    f"{overflow}px wider than the screen")
+
+    # The hamburger is how you get anywhere on a phone, so it has to be there
+    # and be big enough to hit.
+    box = page.locator('[aria-label="Open menu"]').first.bounding_box()
+    smoke.check("phone: the menu button exists", box is not None)
+    if box:
+        smoke.check("phone: the menu button is big enough to tap",
+                    box["width"] >= 28 and box["height"] >= 20,
+                    f"{round(box['width'])}x{round(box['height'])}")
+
+    smoke.check("phone: no console errors", not smoke.console_errors,
+                "; ".join(smoke.console_errors[:2]))
+
 
 
 def run_desktop(smoke: Smoke) -> None:
@@ -253,6 +300,17 @@ def main() -> int:
         smoke = Smoke(context.new_page())
         try:
             run_for(smoke)
+
+            print("--- small phone ---", flush=True)
+            small = browser.new_context(
+                viewport={"width": 360, "height": 640}, is_mobile=True, has_touch=True,
+                permissions=["camera", "microphone"],
+            )
+            phone_smoke = Smoke(small.new_page())
+            phone_smoke.results = smoke.results
+            run_small_phone(phone_smoke)
+            small.close()
+
 
             print("\n--- desktop layout ---", flush=True)
             wide = browser.new_context(
