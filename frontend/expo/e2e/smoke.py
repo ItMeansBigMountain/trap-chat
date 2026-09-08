@@ -57,7 +57,10 @@ class Smoke:
 
     def check(self, name: str, ok: bool, detail: str = "") -> bool:
         self.results.append((name, ok, detail))
-        print(f"{'PASS' if ok else 'FAIL'}  {name}" + (f"  |  {detail[:150]}" if detail else ""), flush=True)
+        line = f"{'PASS' if ok else 'FAIL'}  {name}" + (f"  |  {detail[:150]}" if detail else "")
+        # Emoji in the app, cp1252 in the console. Printing raw ended the
+        # whole run with a UnicodeEncodeError that read like a real failure.
+        print(line.encode("ascii", "replace").decode("ascii"), flush=True)
         return ok
 
     def body(self) -> str:

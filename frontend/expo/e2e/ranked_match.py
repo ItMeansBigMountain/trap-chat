@@ -15,7 +15,11 @@ Requires: pip install playwright && playwright install chromium
 from playwright.sync_api import sync_playwright
 import sys, time, re
 res=[]
-def check(n,ok,d=""): res.append((n,ok,d)); print(f"{'PASS' if ok else 'FAIL'}  {n}"+(f"  |  {d[:150]}" if d else ""), flush=True)
+def check(n, ok, d=""):
+    res.append((n, ok, d))
+    line = f"{'PASS' if ok else 'FAIL'}  {n}" + (f"  |  {d[:150]}" if d else "")
+    # Emoji in the app, cp1252 in the console. Printing raw ended the run.
+    print(line.encode("ascii", "replace").decode("ascii"), flush=True)
 APP = sys.argv[1] if len(sys.argv)>1 else "http://127.0.0.1:8100/"
 
 def guest(pg, name):

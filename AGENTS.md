@@ -264,6 +264,46 @@ A room disappears once nobody has been in it for `EMPTY_ROOM_TIMEOUT_SECONDS`
 - This is in-process state, the same assumption `MATCHMAKING_LOCK` makes. A
   second worker would need this moved into the database.
 
+### The same presence decides who you can be paired against
+
+A dropped socket is deliberately **not** treated as leaving a queue: Socket.IO
+reconnects on any blip, and treating that as a decision to leave used to pull
+players out of their own queue, so the next arrival found an empty room and
+both sat on Searching. The cost of that choice was that a genuinely closed tab
+stayed pairable for the full `QUEUE_TIMEOUT_MINUTES`, and the next person to
+queue started a match against somebody who was never coming back.
+
+`find_opponent()` now skips any waiting match nobody has been seen in for
+`QUEUE_PRESENCE_GRACE_SECONDS` (45). The row is left alone, so a blip can still
+rejoin its own queue; it simply stops being offered to a third party. Two
+things make this safe and both are load-bearing:
+
+- `api_quick_match` calls `refresh_live_presence()` before judging anyone, or
+  the only reading available is stale and everybody looks gone.
+- Queueing itself stamps presence. Without that, a brand new queue inherits the
+  `PROCESS_STARTED_AT` default, reads as ancient on a long-running server, and
+  **nobody can pair at all** — a worse bug than the one being fixed.
+
+A test that inserts a `waiting` Match row directly has bypassed the endpoint
+that would have stamped it, so it must call `touch_match_presence()` itself or
+matchmaking will correctly refuse to offer its fictional opponent.
+
+## Presence, and saying whether anybody is here
+
+`GET /api/presence` returns `online`, `waiting` per competitive game, and
+`open_rooms`. An empty app and a broken app are otherwise the same screen:
+Random dead-ends, the queue says you are the only one, Browse is empty, and
+none of it said whether that was bad luck or a dead product.
+
+- `online` counts distinct identities, not sockets, so one person with two tabs
+  is one person.
+- Held-back games (`HIDDEN_GAMES`) are not reported, or the numbers would
+  advertise something nobody can play.
+- Surfaced on the Social start screen and on the Competitive cards, polled
+  every 15s and only while there is nothing else on screen. Counted from live
+  sockets, so it is exact on one replica and moves to Redis with everything
+  else in [SCALING.md](SCALING.md) before a second.
+
 ## Gameplay and scoring
 
 - **Reps are counted in the player's browser** from MediaPipe pose landmarks.
@@ -643,6 +683,16 @@ terraform -chdir=infra/terraform validate
   containing both `environment` and `Environment` is rejected with
   `Duplicate tag key 'environment' found (case-insensitive)`.
 - Storage account and registry names are globally unique across Azure.
+- **The local Flask dev server cannot do WebSockets.** Running `python app.py`
+  makes every browser log `WebSocket connection ... failed: Invalid frame
+  header`, Socket.IO falls back to polling, and everything still works. It
+  fails only `smoke.py`'s "no console errors" checks and is not a regression:
+  the same suite passes 58/58 against production, which serves under gunicorn.
+  Check against the deployed URL before chasing it.
+- **The e2e suites print to a cp1252 console on Windows.** The app is full of
+  emoji, so every `check()` encodes its line to ASCII first. Printing raw
+  killed a whole run with a `UnicodeEncodeError` that read like a product
+  failure and hid every check after it.
 - The Terraform state backend is a separate storage account
   (`cwbtfstate4f070006f5`). A normal user login has no data-plane access to
   it, so Terraform can only run from the pipeline, not from a laptop.

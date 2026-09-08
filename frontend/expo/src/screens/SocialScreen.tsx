@@ -24,7 +24,7 @@ import {
   Dimensions,
 } from 'react-native';
 import { useApp } from '../context/AppContext';
-import api from '../services/api';
+import api, { Presence } from '../services/api';
 import { GameSlug } from '../types';
 import call, { CallState, videoSupported } from '../services/webrtc';
 import { VideoStage } from '../components/VideoStage';
@@ -55,6 +55,22 @@ export function SocialScreen() {
   const [liked, setLiked] = useState(false);
   const [saved, setSaved] = useState(false);
   const [reporting, setReporting] = useState(false);
+  const [presence, setPresence] = useState<Presence | null>(null);
+
+  // Only while there is nothing else to look at. Polling behind a live chat
+  // would be noise.
+  useEffect(() => {
+    if (match) return;
+    let stopped = false;
+    const poll = () =>
+      api.getPresence().then((next) => !stopped && setPresence(next)).catch(() => {});
+    void poll();
+    const timer = setInterval(poll, 15000);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [match]);
   const drag = useRef(new Animated.Value(0)).current;
   const scroller = useRef<ScrollView | null>(null);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
@@ -206,6 +222,15 @@ export function SocialScreen() {
         <Text style={styles.emptyBody}>
           Drop into a channel with whoever is around. Swipe up any time to skip to
           someone new.
+        </Text>
+        {/* Whether anybody is here at all. Without this, a quiet moment and a
+            broken app are the same screen. */}
+        <Text style={styles.presence}>
+          {presence === null
+            ? ' '
+            : presence.online <= 1
+            ? 'Nobody else is here right now. Start anyway and you will be first in line.'
+            : `${presence.online} people here right now`}
         </Text>
         {error ? <Text style={styles.error}>{error}</Text> : null}
         <TouchableOpacity style={styles.cta} onPress={next} disabled={connecting}>
@@ -447,6 +472,7 @@ const styles = StyleSheet.create({
   emptyIcon: { fontSize: 46 },
   emptyTitle: { color: T.text, fontSize: 26, fontWeight: '900', marginTop: 12 },
   emptyBody: { color: T.textDim, textAlign: 'center', marginTop: 10, lineHeight: 20 },
+  presence: { color: T.textFaint, fontSize: 12, textAlign: 'center', marginTop: 14, lineHeight: 17 },
   error: { color: T.accent, marginTop: 14, textAlign: 'center' },
   cta: { marginTop: 26, backgroundColor: T.accent, paddingVertical: 15, paddingHorizontal: 54, borderRadius: T.radius },
   ctaText: { color: T.text, fontWeight: '900', fontSize: 17 },

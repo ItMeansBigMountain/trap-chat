@@ -1,8 +1,9 @@
 """Shared test setup.
 
 Every test imports the same app module, so process-level state carries between
-them. The rate limiter is the one piece that matters: a file that registers
-several accounts would otherwise throttle the file that runs after it.
+them: the rate limiter, presence stamps, and the database itself. Each has
+caused a failure that only appeared when the whole suite ran, so each is reset
+here rather than discovered again.
 """
 
 import sys
@@ -19,6 +20,14 @@ def reset_process_state():
 
     if hasattr(app_module, "reset_rate_limits"):
         app_module.reset_rate_limits()
+
+    # Presence is keyed by match id, and match ids restart at 1 for every
+    # test database. Without clearing it a test inherits the last-seen stamp
+    # of some unrelated match from an earlier file, so its queue reads as
+    # abandoned and nobody pairs -- only when the suite runs whole.
+    if hasattr(app_module, "MATCH_LAST_SEEN"):
+        with app_module.MATCH_LAST_SEEN_LOCK:
+            app_module.MATCH_LAST_SEEN.clear()
 
     # The module is imported once, so every test shares one database. A queue
     # left behind by an earlier test changes who the next one is paired with,

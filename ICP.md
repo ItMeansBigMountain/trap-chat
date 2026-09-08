@@ -109,11 +109,12 @@ each other. The failure rate is finally being measured; the fix costs money.
 
 ## What I would build next, in this order
 
-1. **Report and block.** The product cannot responsibly grow without it, and
-   no store will take it.
-2. **A presence signal.** "14 people online", "3 waiting for push-ups". It
-   turns an empty app from broken into quiet, and tells somebody when to come
-   back. Cheap, and it makes every other number honest.
+1. ~~**Report and block.**~~ Shipped. One tap from the room, and reporting
+   always blocks, because reporting a stranger you are on camera with is a
+   request to get away from them.
+2. ~~**A presence signal.**~~ Shipped. The Social start screen and the
+   Competitive cards now say how many people are on and how many are waiting
+   for each game, so an empty app reads as quiet rather than broken.
 3. **A reason to return.** Start with the smallest real one: your rating, and
    who passed you on the leaderboard while you were away.
 4. **TURN**, once the measured failure rate says how much it is worth.

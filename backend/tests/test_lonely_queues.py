@@ -104,6 +104,10 @@ def test_pairing_wins_over_the_queue_you_are_already_in(tmp_path):
         ))
         module.db.session.commit()
         rival_match = theirs.id
+        # Matchmaking will not offer a queue nobody has been seen sitting in,
+        # and inserting the row directly skips the endpoint that would have
+        # said so. The rival is meant to be there, so say it.
+        module.touch_match_presence(rival_match)
 
     again = queue(one)
 

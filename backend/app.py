@@ -25,6 +25,13 @@ SECRET_KEY = os.environ.get('SECRET_KEY', 'dev-secret-change-in-production')
 JWT_EXP_HOURS = 24 * 30  # 30 days
 # How long a queued match stays joinable. Past this it is treated as abandoned.
 QUEUE_TIMEOUT_MINUTES = 5
+# How long a queued player can go unseen before we stop offering them to
+# somebody else. A dropped socket is deliberately not treated as leaving the
+# queue -- reconnect blips were pulling people out of their own -- but that
+# left a closed tab pairable for the full five minutes, so the next arrival
+# started a match against somebody who was never coming back. The row stays,
+# so a blip can still rejoin it; it just stops being handed to a third party.
+QUEUE_PRESENCE_GRACE_SECONDS = 45
 # How long an empty room lingers before it is deleted, front and back.
 EMPTY_ROOM_TIMEOUT_SECONDS = 60
 
@@ -986,6 +993,14 @@ def api_quick_match():
     fresh_cutoff = datetime.utcnow() - timedelta(minutes=QUEUE_TIMEOUT_MINUTES)
 
     with MATCHMAKING_LOCK:
+        # Stamp everyone holding a socket before judging who is still here.
+        # A player waiting quietly in a queue sends nothing, so without this
+        # the only reading available is stale and everybody looks gone.
+        refresh_live_presence()
+        presence_cutoff = datetime.utcnow() - timedelta(
+            seconds=QUEUE_PRESENCE_GRACE_SECONDS
+        )
+
         # A match you are already in wins, whether it is still filling or has
         # already started. Returning a started match matters: a client that
         # missed the match_start broadcast recovers just by asking again.
@@ -1011,6 +1026,10 @@ def api_quick_match():
             ).all()
             # Only rooms with space, and never one everybody already left.
             candidates = [c for c in candidates if 0 < len(present_players(c)) < game.max_players]
+            # And never one whose occupant has not been seen in a while. Their
+            # seat is still theirs to come back to; it is just not something to
+            # pair a live player against.
+            candidates = [c for c in candidates if match_last_seen(c.id) >= presence_cutoff]
             # A block is worthless if matchmaking ignores it, and it counts in
             # both directions: being paired with somebody who blocked you is
             # exactly as bad as being paired with somebody you blocked.
@@ -1105,6 +1124,12 @@ def api_quick_match():
                 display_name=request.user.username if request.user else guest_display_name(guest_session or 'anon'),
             ))
             db.session.commit()
+
+        # Asking to be matched is itself being here. The socket join lands a
+        # moment later, and without this the queue is briefly a room nobody
+        # has ever been seen in -- which is exactly what we now refuse to
+        # pair anyone against.
+        touch_match_presence(match.id)
 
         # Both paths end here, so a complete match always starts.
         start_if_ready(match, game)
@@ -1889,6 +1914,51 @@ def api_report():
     record_event('user_reported', viewer='account' if request.user else 'guest',
                  meta={'reason': reason})
     return jsonify({'ok': True, 'reported': target.display_name, 'blocked': True})
+
+
+@app.route('/api/presence', methods=['GET'])
+def api_presence():
+    """How many people are actually here.
+
+    An empty app and a broken app look identical, and that is the difference
+    between somebody coming back tomorrow and not. Everything dead-ends when
+    nobody else is on -- Random searches, a queue says you are the only one,
+    Browse is empty -- and none of it said whether that was bad luck or a dead
+    product. This says.
+
+    Counted from live sockets, which is exact on one replica and would need
+    moving to Redis alongside everything else in SCALING.md before a second.
+    """
+    identities = set()
+    for identity in list(SOCKET_IDENTITIES.values()):
+        user_id = identity.get('user_id')
+        guest = identity.get('guest_session')
+        if user_id:
+            identities.add(('user', user_id))
+        elif guest:
+            identities.add(('guest', guest))
+
+    fresh_cutoff = datetime.utcnow() - timedelta(minutes=QUEUE_TIMEOUT_MINUTES)
+    waiting = {}
+    for game in Game.query.filter(Game.category == COMPETITIVE).all():
+        if game.slug in HIDDEN_GAMES:
+            continue
+        rooms = Match.query.filter(
+            Match.game_id == game.id,
+            Match.status == 'waiting',
+            Match.created_at >= fresh_cutoff,
+        ).all()
+        waiting[game.slug] = sum(len(present_players(m)) for m in rooms)
+
+    open_rooms = Room.query.filter_by(status='open').join(Game).filter(
+        Game.category == SOCIAL
+    ).count()
+
+    return jsonify({
+        'online': len(identities),
+        'waiting': waiting,
+        'open_rooms': open_rooms,
+    })
 
 
 @app.route('/api/leaderboard/<slug>', methods=['GET'])

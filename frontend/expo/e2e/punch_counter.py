@@ -121,7 +121,10 @@ def main() -> int:
 
     def check(name: str, ok: bool, detail: str = "") -> None:
         results.append((name, ok, detail))
-        print(f"{'PASS' if ok else 'FAIL'}  {name}" + (f"  |  {detail}" if detail else ""), flush=True)
+        line = f"{'PASS' if ok else 'FAIL'}  {name}" + (f"  |  {detail}" if detail else "")
+        # Emoji in the app, cp1252 in the console. Printing raw ended the
+        # whole run with a UnicodeEncodeError that read like a real failure.
+        print(line.encode("ascii", "replace").decode("ascii"), flush=True)
 
     with sync_playwright() as p:
         browser = p.chromium.launch()

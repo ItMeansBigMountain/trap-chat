@@ -13,6 +13,7 @@ Requires: pip install playwright && playwright install chromium
 """
 
 from playwright.sync_api import sync_playwright
+import re
 import sys
 import time
 
@@ -22,7 +23,11 @@ res = []
 
 def check(name, ok, detail=""):
     res.append((name, ok, detail))
-    print(f"{'PASS' if ok else 'FAIL'}  {name}" + (f"  |  {detail[:150]}" if detail else ""), flush=True)
+    line = f"{'PASS' if ok else 'FAIL'}  {name}" + (f"  |  {detail[:150]}" if detail else "")
+    # The app is full of emoji and Windows consoles are not. A result that
+    # cannot be printed used to end the run with a UnicodeEncodeError, which
+    # reads like a product failure and hides every journey after it.
+    print(line.encode("ascii", "replace").decode("ascii"), flush=True)
 
 
 def body(page):
@@ -205,6 +210,50 @@ with sync_playwright() as p:
         check("forfeiting a mog off declares a winner", "You win" in body(lx), one_line(lx, 240))
 
     close(lx, ly)
+
+    # ---------- JOURNEY 2b: THE APP SAYS WHETHER ANYBODY IS HERE ----------
+    # A quiet app and a broken app are the same screen without this. The check
+    # is that the numbers are real, not that they are decorative: one guest
+    # queued for push-ups has to show up on the other guest's card.
+    pb = guest(browser, f"pb{t}")
+    to_competitive(pb)
+    pb.get_by_text("Push-Ups", exact=True).click()
+    pb.wait_for_timeout(3000)
+
+    # Mounted after pb queued, so the first poll already sees them and the
+    # test does not sit through a refresh interval.
+    pa = guest(browser, f"pa{t}")
+    to_competitive(pa)
+    pa.wait_for_timeout(4000)
+    seen = body(pa)
+
+    online = re.search(r"(\d+) people online", seen)
+    check("competitive says how many people are online",
+          online is not None and int(online.group(1)) >= 2,
+          seen[:160].replace(chr(10), " | "))
+
+    waiting = re.search(r"(\d+) waiting", seen)
+    check("a queued opponent shows as waiting on the game card",
+          waiting is not None and int(waiting.group(1)) >= 1,
+          seen[:200].replace(chr(10), " | "))
+
+    # Social has the same problem in a harsher place: an empty start screen.
+    to_random(pa)
+    pa.wait_for_timeout(3500)
+    social = body(pa)
+    # Put the queue back before asserting anything else. A failed check that
+    # ends the run must not leave a queued ghost behind for the next run to
+    # pair against -- that turns one failure into a different failure later.
+    try:
+        pb.get_by_text("Cancel", exact=True).first.click()
+        pb.wait_for_timeout(1500)
+    except Exception:
+        pass  # Already matched or already gone.
+    close(pa, pb)
+
+    check("the social start screen says whether anybody is here",
+          "people here right now" in social or "Nobody else is here" in social,
+          social[:200].replace(chr(10), " | "))
 
     # ---------- JOURNEY 3: TWO STRANGERS IN A SOCIAL CHAT ----------
     a = guest(browser, f"sa{t}")

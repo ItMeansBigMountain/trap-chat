@@ -108,6 +108,10 @@ def test_matchmaking_prefers_a_similar_rating(tmp_path):
             ))
             if username == "near_rating":
                 near_match_id = match.id
+        # Matchmaking will not offer a queue nobody has been seen sitting in,
+        # and inserting the row directly skips the endpoint that would have
+        # said so. The rival is meant to be there, so say it.
+            module.touch_match_presence(match.id)
         module.User.query.filter_by(username="seeker").first().rating = 1000
         module.db.session.commit()
 

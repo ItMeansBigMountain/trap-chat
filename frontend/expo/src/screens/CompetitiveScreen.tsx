@@ -12,7 +12,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useApp } from '../context/AppContext';
-import api, { QueueState } from '../services/api';
+import api, { Presence, QueueState } from '../services/api';
 import { GameSlug } from '../types';
 
 const ART: Record<string, { icon: string; blurb: string }> = {
@@ -29,6 +29,7 @@ export function CompetitiveScreen() {
   const [waitedSeconds, setWaitedSeconds] = useState(0);
   const [queuedFor, setQueuedFor] = useState<GameSlug | null>(null);
   const [queue_, setQueueState] = useState<QueueState | null>(null);
+  const [presence, setPresence] = useState<Presence | null>(null);
   const competitive = state.games.filter((g) => g.category === 'competitive');
   const isSearching = state.isSearching;
 
@@ -65,6 +66,22 @@ export function CompetitiveScreen() {
       clearInterval(timer);
     };
   }, [isSearching, queuedFor]);
+
+  // While choosing a game, not while queued: the queue has its own, sharper
+  // count. Knowing three people are waiting for push-ups is the difference
+  // between picking that and picking the one nobody is on.
+  useEffect(() => {
+    if (isSearching) return;
+    let stopped = false;
+    const poll = () =>
+      api.getPresence().then((next) => !stopped && setPresence(next)).catch(() => {});
+    void poll();
+    const timer = setInterval(poll, 15000);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [isSearching]);
 
   const queue = async (slug: GameSlug) => {
     setError(null);
@@ -114,12 +131,21 @@ export function CompetitiveScreen() {
         early, and a disconnect is a stalemate.
       </Text>
 
+      {presence !== null && !isSearching ? (
+        <Text style={styles.presence} accessibilityLabel="People online">
+          {presence.online <= 1
+            ? 'Nobody else is on right now. Queue anyway — you will be paired the moment somebody arrives.'
+            : `${presence.online} people online`}
+        </Text>
+      ) : null}
+
       {competitive.length === 0 ? (
         <Text style={styles.empty}>No competitive games available.</Text>
       ) : (
         <View style={styles.grid}>
           {competitive.map((game) => {
             const art = ART[game.slug] ?? { icon: '🎮', blurb: '' };
+            const waiting = presence?.waiting?.[game.slug] ?? 0;
             return (
               <TouchableOpacity
                 key={game.slug}
@@ -130,6 +156,14 @@ export function CompetitiveScreen() {
                 <Text style={styles.cardIcon}>{art.icon}</Text>
                 <Text style={styles.cardTitle}>{game.name}</Text>
                 <Text style={styles.cardBlurb}>{art.blurb}</Text>
+                {waiting > 0 && !isSearching ? (
+                  <Text
+                    style={styles.cardWaiting}
+                    accessibilityLabel={`${waiting} waiting for ${game.name}`}
+                  >
+                    ● {waiting} waiting
+                  </Text>
+                ) : null}
               </TouchableOpacity>
             );
           })}
@@ -142,7 +176,8 @@ export function CompetitiveScreen() {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#000000' },
   content: { padding: 18, paddingBottom: 40 },
-  lead: { color: '#a1a1a1', fontSize: 13, lineHeight: 19, marginBottom: 18 },
+  lead: { color: '#a1a1a1', fontSize: 13, lineHeight: 19, marginBottom: 10 },
+  presence: { color: '#8a8a8a', fontSize: 12, lineHeight: 17, marginBottom: 18 },
   queued: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -172,5 +207,6 @@ const styles = StyleSheet.create({
   cardIcon: { fontSize: 32 },
   cardTitle: { color: '#fff', fontWeight: '800', fontSize: 16, marginTop: 10 },
   cardBlurb: { color: '#a1a1a1', fontSize: 11, marginTop: 4, textAlign: 'center' },
+  cardWaiting: { color: '#CCFF00', fontSize: 11, fontWeight: '800', marginTop: 6 },
   empty: { color: '#a1a1a1', fontStyle: 'italic' },
 });

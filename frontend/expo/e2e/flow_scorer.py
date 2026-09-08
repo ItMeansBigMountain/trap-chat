@@ -20,7 +20,10 @@ res = []
 
 def check(name, ok, detail=""):
     res.append((name, ok, detail))
-    print(f"{'PASS' if ok else 'FAIL'}  {name}" + (f"  |  {detail}" if detail else ""), flush=True)
+    line = f"{'PASS' if ok else 'FAIL'}  {name}" + (f"  |  {detail}" if detail else "")
+    # Emoji in the app, cp1252 in the console. Printing raw ended the whole
+    # run with a UnicodeEncodeError that read like a product failure.
+    print(line.encode("ascii", "replace").decode("ascii"), flush=True)
 
 
 # Every case: a list of onset times in seconds, and what must be true of the

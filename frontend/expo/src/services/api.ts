@@ -42,6 +42,14 @@ export interface QueueState {
   you_are_waiting: boolean;
 }
 
+// How many people are actually here. An empty app and a broken app look the
+// same, and this is what tells them apart.
+export interface Presence {
+  online: number;
+  waiting: Record<string, number>;
+  open_rooms: number;
+}
+
 export interface SocialRoom {
   code: string;
   name: string;
@@ -231,6 +239,10 @@ class ApiService {
       method: 'POST',
       body: JSON.stringify({ game_slug: gameSlug }),
     });
+  }
+
+  async getPresence(): Promise<Presence> {
+    return this.request('/api/presence');
   }
 
   async getQueue(gameSlug: GameSlug): Promise<QueueState> {
