@@ -33,6 +33,8 @@ export function videoSupported(): boolean {
 
 class CallSession {
   private pc: RTCPeerConnection | null = null;
+  /** One outcome per call, so a flapping connection is not counted twice. */
+  private outcomeReported = false;
   private local: MediaStream | null = null;
   private offSignal: (() => void) | null = null;
   private matchId: number | null = null;
@@ -69,6 +71,7 @@ class CallSession {
     }
     handlers.onLocalStream?.(this.local);
 
+    this.outcomeReported = false;
     const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
     this.pc = pc;
     this.local.getTracks().forEach((track) => pc.addTrack(track, this.local as MediaStream));
@@ -86,8 +89,23 @@ class CallSession {
       }
     };
     pc.onconnectionstatechange = () => {
-      if (pc.connectionState === 'connected') handlers.onState?.('connected');
+      // Whether a call actually reached the other side is invisible to the
+      // server, which only ever sees the handshake go past. Reported once per
+      // outcome, because it is the number that decides whether TURN is worth
+      // paying for: STUN alone cannot cross symmetric NAT, and the share of
+      // pairs that fail here is the size of that problem.
+      if (pc.connectionState === 'connected') {
+        if (!this.outcomeReported) {
+          this.outcomeReported = true;
+          api.track('webrtc_connected');
+        }
+        handlers.onState?.('connected');
+      }
       if (pc.connectionState === 'failed') {
+        if (!this.outcomeReported) {
+          this.outcomeReported = true;
+          api.track('webrtc_failed');
+        }
         handlers.onState?.('failed', 'Could not establish a direct connection.');
       }
     };

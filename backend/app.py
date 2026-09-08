@@ -92,15 +92,22 @@ def caller_key():
     return (forwarded.split(',')[0].strip() or request.remote_addr or 'unknown')
 
 
-def rate_limited(bucket):
-    """Record an attempt and report how long to wait, or None to proceed."""
+def rate_limited(bucket, limit=None, window=None):
+    """Record an attempt and report how long to wait, or None to proceed.
+
+    Defaults are the sign-in limits, which is what this was written for.
+    Metrics pass their own: they are chattier than a login by design, and
+    holding them to ten in five minutes would drop most of them.
+    """
+    limit = LOGIN_MAX_ATTEMPTS if limit is None else limit
+    window = LOGIN_WINDOW_SECONDS if window is None else window
     now = time.time()
     key = (bucket, caller_key())
     with _RATE_LIMIT_LOCK:
-        attempts = [t for t in _LOGIN_ATTEMPTS.get(key, []) if now - t < LOGIN_WINDOW_SECONDS]
-        if len(attempts) >= LOGIN_MAX_ATTEMPTS:
+        attempts = [t for t in _LOGIN_ATTEMPTS.get(key, []) if now - t < window]
+        if len(attempts) >= limit:
             _LOGIN_ATTEMPTS[key] = attempts
-            return int(LOGIN_WINDOW_SECONDS - (now - attempts[0])) + 1
+            return int(window - (now - attempts[0])) + 1
         attempts.append(now)
         _LOGIN_ATTEMPTS[key] = attempts
     return None
@@ -255,6 +262,29 @@ class BattleVote(db.Model):
 
     match = db.relationship('Match', backref='votes')
     for_player = db.relationship('MatchPlayer', backref='votes')
+
+
+class Event(db.Model):
+    """One thing that happened, for counting later.
+
+    Deliberately in the app's own database rather than a monitoring service.
+    The questions that matter here are app-level and invisible to
+    infrastructure metrics: how often WebRTC fails to connect, how long a
+    queue takes, whether guests behave differently from accounts. Azure can
+    tell you the container's CPU; it cannot tell you that a fifth of calls
+    never see each other.
+
+    Kept cheap: a name, a time, and a small blob. Pruned on a schedule, so it
+    cannot grow without bound on a SQLite file.
+    """
+
+    __tablename__ = 'events'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(40), nullable=False, index=True)
+    at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    # 'guest' or 'account', so every count can be split without joining users.
+    viewer = db.Column(db.String(10), nullable=True)
+    meta_json = db.Column(db.Text, nullable=True)
 
 
 class Leaderboard(db.Model):
@@ -1537,6 +1567,128 @@ def api_game_queue(slug):
         'game_name': game.name,
         'others_waiting': others,
         'you_are_waiting': mine > 0,
+    })
+
+
+# -------------------------
+# Metrics
+# -------------------------
+
+# Only these are recorded. An open-ended name would let anyone fill the table
+# with whatever they liked, and an unbounded set of names is unqueryable
+# anyway. Adding one is a deliberate act.
+KNOWN_EVENTS = {
+    'webrtc_connected',     # a call reached the other side
+    'webrtc_failed',        # it did not: this is the TURN question
+    'match_started',
+    'match_finished',
+    'queue_joined',
+    'queue_cancelled',
+    'social_started',
+    'social_skipped',
+}
+
+# How long events are kept. Long enough to compare a week to the one before,
+# short enough that the table stays small on a SQLite file.
+EVENT_RETENTION_DAYS = 30
+# Nobody legitimately reports more than this, and it stops one tab filling
+# the table.
+MAX_EVENTS_PER_MINUTE = 60
+
+
+def record_event(name, viewer=None, meta=None):
+    """Write one event. Never raises: metrics must not break the thing they
+    are measuring."""
+    try:
+        if name not in KNOWN_EVENTS:
+            return False
+        db.session.add(Event(
+            name=name,
+            viewer=viewer,
+            meta_json=json.dumps(meta) if meta else None,
+        ))
+        db.session.commit()
+        return True
+    except Exception:
+        db.session.rollback()
+        return False
+
+
+def prune_events():
+    """Drop what is older than the retention window."""
+    cutoff = datetime.utcnow() - timedelta(days=EVENT_RETENTION_DAYS)
+    try:
+        Event.query.filter(Event.at < cutoff).delete(synchronize_session=False)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+
+
+@app.route('/api/metrics', methods=['POST'])
+@guest_or_auth
+def api_record_metric():
+    """Report an event from the client.
+
+    The client is the only place that knows some of this: whether a WebRTC
+    call actually connected is invisible to the server, which only ever sees
+    the handshake go past.
+    """
+    if rate_limited('metrics', limit=MAX_EVENTS_PER_MINUTE, window=60) is not None:
+        return jsonify({'error': 'too many events'}), 429
+
+    data = request.get_json() or {}
+    name = str(data.get('name', ''))[:40]
+    if name not in KNOWN_EVENTS:
+        return jsonify({'error': 'unknown event'}), 400
+
+    meta = data.get('meta')
+    if meta is not None and not isinstance(meta, dict):
+        return jsonify({'error': 'meta must be an object'}), 400
+
+    viewer = 'account' if request.user else 'guest'
+    record_event(name, viewer=viewer, meta=meta)
+    return jsonify({'ok': True})
+
+
+@app.route('/api/metrics/summary', methods=['GET'])
+def api_metrics_summary():
+    """Counts for the last day and week, split by guest and account.
+
+    Public on purpose: these are aggregate counts with nothing personal in
+    them, and a dashboard nobody can open is a dashboard nobody reads.
+    """
+    prune_events()
+    now = datetime.utcnow()
+
+    def counts(since):
+        rows = (
+            db.session.query(Event.name, Event.viewer, db.func.count(Event.id))
+            .filter(Event.at >= since)
+            .group_by(Event.name, Event.viewer)
+            .all()
+        )
+        out = {}
+        for name, viewer, total in rows:
+            entry = out.setdefault(name, {'total': 0, 'guest': 0, 'account': 0})
+            entry['total'] += total
+            if viewer in ('guest', 'account'):
+                entry[viewer] += total
+        return out
+
+    day = counts(now - timedelta(days=1))
+    week = counts(now - timedelta(days=7))
+
+    # The number this whole thing exists to answer.
+    connected = week.get('webrtc_connected', {}).get('total', 0)
+    failed = week.get('webrtc_failed', {}).get('total', 0)
+    attempts = connected + failed
+    return jsonify({
+        'generated_at': now.isoformat() + 'Z',
+        'day': day,
+        'week': week,
+        'webrtc_failure_rate_week': round(failed / attempts, 3) if attempts else None,
+        'webrtc_attempts_week': attempts,
+        'retention_days': EVENT_RETENTION_DAYS,
     })
 
 

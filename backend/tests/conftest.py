@@ -29,6 +29,10 @@ def reset_process_state():
             for match in stale:
                 app_module.MatchPlayer.query.filter_by(match_id=match.id).delete()
                 app_module.db.session.delete(match)
+            # Events accumulate for the same reason and make every count in
+            # the metrics tests depend on which files ran first.
+            if hasattr(app_module, "Event"):
+                app_module.Event.query.delete()
             app_module.db.session.commit()
     except Exception:
         # A test that has not created its tables yet has nothing to clear.

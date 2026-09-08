@@ -235,6 +235,17 @@ class ApiService {
     });
   }
 
+  /**
+   * Report something that happened. Fire and forget on purpose: a metric that
+   * can break the thing it measures is worse than no metric.
+   */
+  track(name: string, meta?: Record<string, unknown>): void {
+    void this.request('/api/metrics', {
+      method: 'POST',
+      body: JSON.stringify({ name, meta }),
+    }).catch(() => {});
+  }
+
   async getLeaderboard(gameSlug: GameSlug): Promise<LeaderboardEntry[]> {
     return this.request(`/api/leaderboard/${gameSlug}`);
   }

@@ -4,6 +4,9 @@ Project working agreements, deployment model, Azure architecture decisions,
 and known gotchas are documented in [AGENTS.md](AGENTS.md). Read that file
 before making changes.
 
+Native iOS and Android are planned in [MOBILE.md](MOBILE.md); seven web-only
+files block a native build today.
+
 Scaling limits, in the order they will bite, are in
 [SCALING.md](SCALING.md). Read it before adding a replica: four pieces of
 in-process state make a second one fail silently.

@@ -275,6 +275,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // Matchmaking
   const startSearch = useCallback(async (gameSlug: GameSlug) => {
     dispatch({ type: 'SET_SEARCHING', payload: { isSearching: true, game: gameSlug } });
+    api.track('queue_joined', { game: gameSlug });
     try {
       const result = await api.quickMatch({ game_slug: gameSlug });
 
@@ -417,7 +418,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     // Tell the server, not just this screen. Leaving the entry behind meant a
     // cancelled player stayed matchable for the whole queue timeout, and the
     // next person to queue was paired with someone who had walked away.
-    if (state.searchGame) void api.cancelQuickMatch(state.searchGame).catch(() => {});
+    if (state.searchGame) {
+      void api.cancelQuickMatch(state.searchGame).catch(() => {});
+      api.track('queue_cancelled', { game: state.searchGame });
+    }
     // Stop claiming the queued match too, or a socket reconnect would put
     // this client back into a queue it just left.
     api.forgetMatch();

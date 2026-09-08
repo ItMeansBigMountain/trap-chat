@@ -500,6 +500,34 @@ bundle in 374ms, so the network was never the problem.
   replica alive would remove it and would also leave the free grant, so the
   cold start stays until that trade is worth making.
 
+## Metrics
+
+Nothing was measured, so every judgement about ad frequency, retention or
+whether TURN is worth paying for was a guess. It is measured now, in the app's
+own database rather than a monitoring service, because the questions that
+matter here are app-level and invisible to infrastructure metrics. Azure can
+report the container's CPU; it cannot report that a fifth of calls never see
+each other.
+
+- `POST /api/metrics` takes one event from a client. Only names in
+  `KNOWN_EVENTS` are accepted: an open-ended name lets anyone fill the table,
+  and an unbounded set of names cannot be queried anyway. Rate limited, and it
+  never raises -- a metric that can break the thing it measures is worse than
+  no metric.
+- `GET /api/metrics/summary` reports the last day and week, split by guest and
+  account, plus the WebRTC failure rate, which is the number that decides the
+  TURN question. No calls yet reports `null` rather than zero: zero would read
+  as "nothing ever fails", which is a very different claim.
+- Events are pruned after `EVENT_RETENTION_DAYS`. The table lives in a SQLite
+  file on a share and cannot grow without bound.
+- Whether a call connected is reported by the **client**, because the server
+  only ever sees the handshake go past.
+
+Infrastructure metrics are still absent: there is no Log Analytics workspace
+and the Container App has no log destination, so the console stream is all
+there is. That is the next step if CPU and memory ever matter, and it is
+inside the Azure free grant, but it answers none of the questions above.
+
 ## Testing
 
 Unit tests and both smoke suites run before anything ships, and the suites
