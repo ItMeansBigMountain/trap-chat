@@ -7,6 +7,9 @@ trapchat.db
 node_modules
 .instagraz
 .vercel
+CLAUDE.local.md
+.claude/settings.local.json
+.claude/agent-memory-local/
 
 # Terraform working directory
 infra/terraform/.terraform/
