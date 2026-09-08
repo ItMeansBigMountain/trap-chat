@@ -188,6 +188,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     async function init() {
       try {
+        // Nothing stored means nobody to restore, so do not make a first-time
+        // visitor wait on a round trip to learn that. The container scales to
+        // zero, so that round trip can be half a minute, and it was being
+        // spent on a question we could already answer.
+        if (!api.hasStoredCredentials()) {
+          dispatch({ type: 'SET_AUTH', payload: { status: 'unauthenticated' } });
+        }
+
         // Restore auth from API
         const me = await api.me();
         if (me.user) {
@@ -201,9 +209,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           dispatch({ type: 'SET_AUTH', payload: { status: 'unauthenticated' } });
         }
 
-        // Fetch games
-        const games = await api.getGames();
-        dispatch({ type: 'SET_GAMES', payload: games });
+        // Games are only needed once you are past the auth screen, so they
+        // are not allowed to hold it up.
+        api.getGames()
+          .then((games) => dispatch({ type: 'SET_GAMES', payload: games }))
+          .catch(() => {});
 
         // Connect socket
         api.connect();

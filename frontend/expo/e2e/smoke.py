@@ -252,6 +252,36 @@ def run_small_phone(smoke: Smoke) -> None:
 
 
 
+def run_cold_backend(smoke: Smoke) -> None:
+    """A first visit while the container is asleep.
+
+    min_replicas is 0 to keep the pilot free, so the first request after an
+    idle spell waits for a container to start: measured at over thirty
+    seconds. The app used to spend all of that on a splash screen before
+    anyone could type a name, which is the entire first impression gone on a
+    question the browser could already answer -- nothing stored means nobody
+    to restore. This holds the backend at arm's length and checks the screen
+    arrives anyway.
+    """
+    page = smoke.page
+    # Never resolve the request. A handler that sleeps blocks Playwright's
+    # route thread and dies with the context; simply not answering is what a
+    # container that has not woken up yet actually looks like.
+    page.route("**/api/auth/me", lambda route: None)
+    started = time.time()
+    page.goto(TARGET, wait_until="domcontentloaded", timeout=90000)
+    try:
+        page.wait_for_selector("input[placeholder='Pick a name (optional)']", timeout=15000)
+        elapsed = time.time() - started
+        smoke.check("a cold backend does not hold up the first screen",
+                    elapsed < 12, f"{elapsed:.1f}s to a usable screen")
+    except Exception:
+        smoke.check("a cold backend does not hold up the first screen", False,
+                    "never became usable while the backend was slow")
+    page.unroute_all(behavior="ignoreErrors")
+
+
+
 def run_desktop(smoke: Smoke) -> None:
     """The web layout is a separate tree, not a reflow of the phone one: a
     persistent sidebar instead of a tab bar and a drawer. Nothing the mobile
@@ -300,6 +330,14 @@ def main() -> int:
         smoke = Smoke(context.new_page())
         try:
             run_for(smoke)
+
+            print("--- cold backend ---", flush=True)
+            cold = browser.new_context(viewport={"width": 390, "height": 844},
+                                       is_mobile=True, has_touch=True)
+            cold_smoke = Smoke(cold.new_page())
+            cold_smoke.results = smoke.results
+            run_cold_backend(cold_smoke)
+            cold.close()
 
             print("--- small phone ---", flush=True)
             small = browser.new_context(

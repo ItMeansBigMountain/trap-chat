@@ -96,6 +96,19 @@ class ApiService {
   private authToken: string | null = loadStored(TOKEN_KEY);
   private guestSessionId: string | null = loadStored(GUEST_KEY);
 
+  /**
+   * Is there anything stored that could identify this visitor?
+   *
+   * If not, the server has nothing to tell us and there is no reason to wait
+   * for it. A first-time visitor arriving while the container is asleep was
+   * watching a splash screen for over thirty seconds before they could type
+   * their name, which is the whole first impression spent on a question whose
+   * answer we already had.
+   */
+  hasStoredCredentials(): boolean {
+    return Boolean(this.authToken || this.guestSessionId);
+  }
+
   private setToken(token: string | null): void {
     this.authToken = token;
     saveStored(TOKEN_KEY, token);

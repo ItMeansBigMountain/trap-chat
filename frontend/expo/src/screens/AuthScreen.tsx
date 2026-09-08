@@ -54,8 +54,12 @@ export function AuthScreen() {
         <View style={styles.divider}><View style={styles.dividerLine} /><Text style={styles.dividerText}>OR</Text><View style={styles.dividerLine} /></View>
         {/* GUESTS PICK A NAME TOO */}
         <TextInput accessibilityLabel="Guest name" autoCapitalize="none" autoCorrect={false} editable={!submitting} maxLength={20} onChangeText={setGuestName} onSubmitEditing={enterAsGuest} placeholder="Pick a name (optional)" placeholderTextColor="#71717a" style={styles.input} value={guestName} />
-        <TouchableOpacity accessibilityRole="button" disabled={submitting} onPress={enterAsGuest} style={styles.secondary}>
-          <Text style={styles.secondaryText}>Continue as guest</Text>
+        <TouchableOpacity accessibilityRole="button" disabled={submitting} onPress={enterAsGuest} style={[styles.secondary, submitting && styles.disabled]}>
+          {/* The container sleeps when idle, so the first request of the day
+              can take a while. Saying so beats a button that looks broken. */}
+          <Text style={styles.secondaryText}>
+            {submitting ? 'Waking the server…' : 'Continue as guest'}
+          </Text>
         </TouchableOpacity>
         <Text style={styles.guestNote}>A short code is added so your name stays unique.</Text>
       </View>
