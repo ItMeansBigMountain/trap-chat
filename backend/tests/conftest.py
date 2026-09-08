@@ -30,9 +30,13 @@ def reset_process_state():
                 app_module.MatchPlayer.query.filter_by(match_id=match.id).delete()
                 app_module.db.session.delete(match)
             # Events accumulate for the same reason and make every count in
-            # the metrics tests depend on which files ran first.
-            if hasattr(app_module, "Event"):
-                app_module.Event.query.delete()
+            # the metrics tests depend on which files ran first. Blocks are
+            # worse: one left behind silently changes who a later test is
+            # allowed to be matched with.
+            for name in ("Event", "Block", "Report"):
+                model = getattr(app_module, name, None)
+                if model is not None:
+                    model.query.delete()
             app_module.db.session.commit()
     except Exception:
         # A test that has not created its tables yet has nothing to clear.

@@ -29,6 +29,7 @@ import { GameSlug } from '../types';
 import call, { CallState, videoSupported } from '../services/webrtc';
 import { VideoStage } from '../components/VideoStage';
 import { Icon } from '../components/Icon';
+import { ReportSheet } from '../components/ReportSheet';
 import { useLayout } from '../hooks/useLayout';
 import { filterIf } from '../services/profanity';
 import { T } from '../theme';
@@ -53,6 +54,7 @@ export function SocialScreen() {
   const [draft, setDraft] = useState('');
   const [liked, setLiked] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [reporting, setReporting] = useState(false);
   const drag = useRef(new Animated.Value(0)).current;
   const scroller = useRef<ScrollView | null>(null);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
@@ -322,6 +324,13 @@ export function SocialScreen() {
       <TouchableOpacity onPress={send} style={styles.send} accessibilityLabel="Send">
         <Text style={styles.sendText}>Post</Text>
       </TouchableOpacity>
+      <TouchableOpacity
+        onPress={() => setReporting(true)}
+        style={styles.report}
+        accessibilityLabel="Report or block"
+      >
+        <Text style={styles.reportText}>Report</Text>
+      </TouchableOpacity>
       <TouchableOpacity onPress={leaveMatch} style={styles.leave}>
         <Text style={styles.leaveText}>Leave</Text>
       </TouchableOpacity>
@@ -358,6 +367,19 @@ export function SocialScreen() {
       style={styles.root}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
+      <ReportSheet
+        visible={reporting}
+        matchId={match.id}
+        playerId={others[0]?.id ?? null}
+        displayName={them}
+        onClose={() => setReporting(false)}
+        onDone={() => {
+          setReporting(false);
+          // Blocking somebody you are in a room with only helps if you also
+          // leave the room.
+          leaveMatch();
+        }}
+      />
       <Animated.View style={[styles.stage, { transform: [{ translateY: drag }] }]} {...pan.panHandlers}>
         {stage}
         <View style={styles.railOverlay} pointerEvents="box-none">
@@ -416,6 +438,8 @@ const styles = StyleSheet.create({
   },
   send: { paddingHorizontal: 16, paddingVertical: 11, borderRadius: T.radiusPill, backgroundColor: T.accent },
   sendText: { color: T.text, fontWeight: '800', fontSize: 13 },
+  report: { paddingHorizontal: 12, paddingVertical: 11, borderRadius: T.radiusPill, backgroundColor: T.surface, borderWidth: 1, borderColor: T.border },
+  reportText: { color: T.textDim, fontWeight: '700', fontSize: 13 },
   leave: { paddingHorizontal: 14, paddingVertical: 11, borderRadius: T.radiusPill, backgroundColor: T.surface, borderWidth: 1, borderColor: T.border },
   leaveText: { color: T.textDim, fontWeight: '700', fontSize: 13 },
 

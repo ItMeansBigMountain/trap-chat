@@ -500,6 +500,36 @@ bundle in 374ms, so the network was never the problem.
   replica alive would remove it and would also leave the free grant, so the
   cold start stays until that trade is worth making.
 
+## Report and block
+
+Random video chat puts strangers on camera together, so being able to end
+that and not have it repeat is part of the product rather than a policy
+checkbox. It is also the thing that would have stopped either app store
+listing this at all (see [MOBILE.md](MOBILE.md)).
+
+- **A block counts in both directions.** Being paired with somebody who
+  blocked you is exactly as bad as being paired with somebody you blocked,
+  and only one of you has to have pressed the button. This is the half that
+  gets forgotten.
+- **Matchmaking and Browse both honour it.** `find_opponent` filters
+  candidates and `/api/rooms` hides rooms with a blocked person in them, which
+  covers Random and Browse at once because Random picks from that same list.
+  A block matchmaking ignores is a button that lies.
+- **Reporting always blocks, and leaves the room.** Reporting a stranger you
+  are on camera with is a request to get away from them; making that two
+  separate actions means the second is forgotten at exactly the wrong moment.
+- **The control is one tap from inside the room**, beside Leave. Somebody who
+  needs it is not going to go hunting through settings for it.
+- Reasons are a fixed set. Free text would need moderating before it could be
+  read, which is a second problem.
+- Blocking a guest is weaker than blocking an account, because a guest gets a
+  new session if they clear their browser. It holds for as long as that person
+  is that person, which is the same guarantee everything else makes about
+  guests.
+
+There is no moderation queue yet: reports are recorded and nothing reads them.
+That is the next piece, and it is a person's job before it is a screen.
+
 ## Metrics
 
 Nothing was measured, so every judgement about ad frequency, retention or

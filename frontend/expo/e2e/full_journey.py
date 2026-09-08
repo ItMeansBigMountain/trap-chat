@@ -241,11 +241,25 @@ with sync_playwright() as p:
         a.wait_for_timeout(2500)
         check("a message relays to the other browser", "yo" in body(b), one_line(b, 200))
 
-        # Leaving has to actually leave.
-        b.get_by_text("Leave", exact=True).last.click()
+        # Report and block, from inside the room. Somebody who needs this is
+        # not going to go looking for it in settings.
+        b.get_by_text("Report", exact=True).last.click()
+        b.wait_for_timeout(1200)
+        sheet = body(b)
+        check("reporting is one tap from the room",
+              "Harassment or hate" in sheet, sheet[:200].replace(chr(10), " | "))
+        check("reporting says it also blocks",
+              "also blocks" in sheet, sheet[:200].replace(chr(10), " | "))
+        b.get_by_text("Harassment or hate", exact=True).click()
         b.wait_for_timeout(2500)
+        check("reporting takes you out of the room",
+              "Swipe up to skip" not in body(b), one_line(b, 140))
+
+        # Leaving has to actually leave.
+        a.get_by_text("Leave", exact=True).last.click()
+        a.wait_for_timeout(2500)
         check("leaving returns you to the start screen",
-              "Start" in body(b) and "Swipe up to skip" not in body(b), one_line(b, 120))
+              "Start" in body(a) and "Swipe up to skip" not in body(a), one_line(a, 120))
 
     close(a, b)
 

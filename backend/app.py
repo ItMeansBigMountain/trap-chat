@@ -264,6 +264,49 @@ class BattleVote(db.Model):
     for_player = db.relationship('MatchPlayer', backref='votes')
 
 
+class Block(db.Model):
+    """One person refusing to be matched with another, ever again.
+
+    Random video chat puts strangers on camera together, so the ability to end
+    that and not have it repeat is part of the product, not a policy checkbox.
+    Both stores also require it before they will list an app like this.
+
+    Identity is the same pair used everywhere else: a user id for accounts, a
+    session for guests. Blocking a guest is weaker than blocking an account --
+    they get a new session if they clear their browser -- but it holds for as
+    long as that person is that person, which is the same guarantee the rest
+    of the app makes about guests.
+    """
+
+    __tablename__ = 'blocks'
+    id = db.Column(db.Integer, primary_key=True)
+    blocker_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True, index=True)
+    blocker_guest = db.Column(db.String(64), nullable=True, index=True)
+    blocked_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True, index=True)
+    blocked_guest = db.Column(db.String(64), nullable=True, index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class Report(db.Model):
+    """Somebody flagged for review.
+
+    A report always blocks as well. Reporting somebody you are on camera with
+    is a request to get away from them; making that two separate actions means
+    the second one gets forgotten at exactly the wrong moment.
+    """
+
+    __tablename__ = 'reports'
+    id = db.Column(db.Integer, primary_key=True)
+    reporter_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    reporter_guest = db.Column(db.String(64), nullable=True)
+    reported_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True, index=True)
+    reported_guest = db.Column(db.String(64), nullable=True, index=True)
+    reported_name = db.Column(db.String(50), nullable=True)
+    reason = db.Column(db.String(40), nullable=False)
+    match_id = db.Column(db.Integer, db.ForeignKey('matches.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+
 class Event(db.Model):
     """One thing that happened, for counting later.
 
@@ -968,6 +1011,14 @@ def api_quick_match():
             ).all()
             # Only rooms with space, and never one everybody already left.
             candidates = [c for c in candidates if 0 < len(present_players(c)) < game.max_players]
+            # A block is worthless if matchmaking ignores it, and it counts in
+            # both directions: being paired with somebody who blocked you is
+            # exactly as bad as being paired with somebody you blocked.
+            blocked_users, blocked_guests = blocked_pairs()
+            candidates = [
+                c for c in candidates
+                if not match_has_blocked(c, blocked_users, blocked_guests)
+            ]
             if not candidates:
                 return None
             if game.category != COMPETITIVE:
@@ -1090,12 +1141,19 @@ def room_occupants(room):
 
 
 @app.route('/api/rooms', methods=['GET'])
+@optional_auth
 def api_list_rooms():
     purge_abandoned_rooms()
     rooms = Room.query.filter_by(status='open').join(Game).filter(Game.category == SOCIAL).all()
+    # Random picks from this list and Browse renders it, so hiding rooms with
+    # a blocked person in them covers both routes into a room at once.
+    blocked_users, blocked_guests = blocked_pairs()
     out = []
     for r in rooms:
         occupants = room_occupants(r)
+        match = Match.query.filter_by(room_code=r.code).first()
+        if match is not None and match_has_blocked(match, blocked_users, blocked_guests):
+            continue
         out.append({
             'code': r.code,
             'name': r.name or f'{r.game.name} {r.code[:4]}',
@@ -1586,6 +1644,8 @@ KNOWN_EVENTS = {
     'queue_cancelled',
     'social_started',
     'social_skipped',
+    'user_blocked',
+    'user_reported',
 }
 
 # How long events are kept. Long enough to compare a week to the one before,
@@ -1690,6 +1750,145 @@ def api_metrics_summary():
         'webrtc_attempts_week': attempts,
         'retention_days': EVENT_RETENTION_DAYS,
     })
+
+
+# -------------------------
+# Blocking and reporting
+# -------------------------
+
+REPORT_REASONS = {'nudity', 'harassment', 'underage', 'violence', 'spam', 'other'}
+
+
+def blocked_pairs():
+    """Every identity this caller must not be matched with, in either
+    direction.
+
+    Both directions matter and it is the half people forget: if they blocked
+    you, pairing you with them is exactly as bad as pairing them with you, and
+    only one of you has to have pressed the button.
+    """
+    user = request.user if hasattr(request, 'user') else None
+    guest = guest_session_id()
+    user_ids, guests = set(), set()
+
+    mine = Block.query.filter(
+        (Block.blocker_user_id == user.id) if user else (Block.blocker_guest == guest)
+    ).all()
+    for block in mine:
+        if block.blocked_user_id:
+            user_ids.add(block.blocked_user_id)
+        if block.blocked_guest:
+            guests.add(block.blocked_guest)
+
+    theirs = Block.query.filter(
+        (Block.blocked_user_id == user.id) if user else (Block.blocked_guest == guest)
+    ).all()
+    for block in theirs:
+        if block.blocker_user_id:
+            user_ids.add(block.blocker_user_id)
+        if block.blocker_guest:
+            guests.add(block.blocker_guest)
+
+    return user_ids, guests
+
+
+def match_has_blocked(match, user_ids, guests):
+    """Is anyone in this match on the wrong side of a block?"""
+    if not user_ids and not guests:
+        return False
+    for player in present_players(match):
+        if player.user_id and player.user_id in user_ids:
+            return True
+        if player.guest_session_id and player.guest_session_id in guests:
+            return True
+    return False
+
+
+def player_in_match(match_id, player_id):
+    return MatchPlayer.query.filter_by(id=player_id, match_id=match_id).first()
+
+
+def _record_block(target):
+    """Block a MatchPlayer's identity, once."""
+    user = request.user
+    guest = guest_session_id()
+    existing = Block.query.filter(
+        ((Block.blocker_user_id == user.id) if user else (Block.blocker_guest == guest)),
+        ((Block.blocked_user_id == target.user_id) if target.user_id
+         else (Block.blocked_guest == target.guest_session_id)),
+    ).first()
+    if existing:
+        return existing
+    block = Block(
+        blocker_user_id=user.id if user else None,
+        blocker_guest=None if user else guest,
+        blocked_user_id=target.user_id,
+        blocked_guest=target.guest_session_id,
+    )
+    db.session.add(block)
+    db.session.commit()
+    return block
+
+
+@app.route('/api/blocks', methods=['POST'])
+@guest_or_auth
+def api_block():
+    """Never match me with this person again."""
+    data = request.get_json() or {}
+    target = player_in_match(data.get('match_id'), data.get('player_id'))
+    if target is None:
+        return jsonify({'error': 'no such player in that match'}), 400
+
+    is_me = (
+        target.user_id == request.user.id if request.user
+        else target.guest_session_id == guest_session_id()
+    )
+    if is_me:
+        return jsonify({'error': 'you cannot block yourself'}), 400
+
+    _record_block(target)
+    record_event('user_blocked', viewer='account' if request.user else 'guest')
+    return jsonify({'ok': True, 'blocked': target.display_name})
+
+
+@app.route('/api/reports', methods=['POST'])
+@guest_or_auth
+def api_report():
+    """Flag somebody for review, and get away from them at the same time."""
+    data = request.get_json() or {}
+    reason = str(data.get('reason', 'other'))
+    if reason not in REPORT_REASONS:
+        return jsonify({'error': 'unknown reason'}), 400
+
+    target = player_in_match(data.get('match_id'), data.get('player_id'))
+    if target is None:
+        return jsonify({'error': 'no such player in that match'}), 400
+
+    is_me = (
+        target.user_id == request.user.id if request.user
+        else target.guest_session_id == guest_session_id()
+    )
+    if is_me:
+        return jsonify({'error': 'you cannot report yourself'}), 400
+
+    db.session.add(Report(
+        reporter_user_id=request.user.id if request.user else None,
+        reporter_guest=None if request.user else guest_session_id(),
+        reported_user_id=target.user_id,
+        reported_guest=target.guest_session_id,
+        reported_name=target.display_name,
+        reason=reason,
+        match_id=target.match_id,
+    ))
+    db.session.commit()
+
+    # A report always blocks. Reporting somebody you are on camera with is a
+    # request to get away from them, and making that a second, separate action
+    # means it gets forgotten at exactly the wrong moment.
+    _record_block(target)
+    record_event('user_reported', viewer='account' if request.user else 'guest',
+                 meta={'reason': reason})
+    return jsonify({'ok': True, 'reported': target.display_name, 'blocked': True})
 
 
 @app.route('/api/leaderboard/<slug>', methods=['GET'])

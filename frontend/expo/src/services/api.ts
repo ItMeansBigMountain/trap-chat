@@ -237,6 +237,24 @@ class ApiService {
     return this.request(`/api/games/${gameSlug}/queue`);
   }
 
+  async blockPlayer(matchId: number, playerId: number): Promise<{ blocked: string }> {
+    return this.request('/api/blocks', {
+      method: 'POST',
+      body: JSON.stringify({ match_id: matchId, player_id: playerId }),
+    });
+  }
+
+  async reportPlayer(
+    matchId: number,
+    playerId: number,
+    reason: string,
+  ): Promise<{ reported: string; blocked: boolean }> {
+    return this.request('/api/reports', {
+      method: 'POST',
+      body: JSON.stringify({ match_id: matchId, player_id: playerId, reason }),
+    });
+  }
+
   async getVotes(matchId: number): Promise<VoteState> {
     return this.request(`/api/matches/${matchId}/votes`);
   }
