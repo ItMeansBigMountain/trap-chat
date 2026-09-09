@@ -22,7 +22,8 @@ import { useApp } from '../context/AppContext';
 import { MatchOutcome } from '../components/MatchOutcome';
 import { useMatchClock, clearMatchClock } from '../hooks/useMatchClock';
 import api from '../services/api';
-import call, { videoSupported } from '../services/webrtc';
+import call, { PeerView, videoSupported } from '../services/webrtc';
+import { VideoGrid } from '../components/VideoGrid';
 import faceTracker, { FaceTrackerState } from '../services/faceTracker';
 import { useAccent } from '../hooks/useAccent';
 import { FaceOverlay } from '../components/FaceOverlay';
@@ -31,23 +32,6 @@ import { T } from '../theme';
 
 const isWeb = Platform.OS === 'web';
 
-function Camera({ stream, onReady }: { stream: MediaStream | null; onReady: (el: HTMLVideoElement) => void }) {
-  const ref = useRef<HTMLVideoElement | null>(null);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    if (el.srcObject !== stream) el.srcObject = stream;
-    if (stream) onReady(el);
-  }, [stream, onReady]);
-  if (!isWeb) return null;
-  return React.createElement('video', {
-    ref,
-    autoPlay: true,
-    playsInline: true,
-    muted: true,
-    style: { width: '100%', height: '100%', objectFit: 'cover', background: '#000', display: 'block', transform: 'scaleX(-1)' },
-  });
-}
 
 export function MogOffScreen() {
   const { state, forfeit, submitResult, findNextMatch, leaveMatch } = useApp();
@@ -63,6 +47,10 @@ export function MogOffScreen() {
       : '';
 
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+  // Your opponent, on screen rather than reduced to a number.
+  const [peers, setPeers] = useState<PeerView[]>([]);
+  const [muted, setMuted] = useState(false);
+  const [cameraOff, setCameraOff] = useState(false);
   const [score, setScore] = useState(0);
   const [live, setLive] = useState(0);
   const [opponentScore, setOpponentScore] = useState(0);
@@ -84,6 +72,7 @@ export function MogOffScreen() {
     let cancelled = false;
     call.start(match.id, {
       onLocalStream: (s) => !cancelled && setLocalStream(s),
+      onPeers: (next) => !cancelled && setPeers(next),
       onState: (_s, detail) => !cancelled && detail && setTrackerDetail(detail),
     });
     return () => {
@@ -200,8 +189,45 @@ export function MogOffScreen() {
       </View>
 
       <View style={styles.cameraWrap}>
-        <Camera stream={localStream} onReady={attachTracker} />
-        <FaceOverlay points={landmarks} accent={accent} visible={showLines} />
+        <VideoGrid
+          localStream={localStream}
+          peers={peers}
+          myName={me}
+          state="connecting"
+          muted={muted}
+          cameraOff={cameraOff}
+          onToggleMute={() => {
+            const nextMuted = !muted;
+            setMuted(nextMuted);
+            call.setMuted(nextMuted);
+          }}
+          onToggleCamera={() => {
+            const nextOff = !cameraOff;
+            setCameraOff(nextOff);
+            call.setCameraOff(nextOff);
+          }}
+          onLocalReady={attachTracker}
+          selfOverlay={
+            <>
+              {/* The lines belong on your own face, so they go on your tile
+                  rather than over the whole grid. */}
+              <FaceOverlay points={landmarks} accent={accent} visible={showLines} />
+              {tracker === 'loading' && (
+                <View style={styles.overlay}>
+                  <ActivityIndicator color={accent} />
+                  <Text style={styles.overlayText}>Loading the face model…</Text>
+                </View>
+              )}
+              {tracker === 'failed' && (
+                <View style={styles.overlay}>
+                  <Text style={styles.overlayText}>{trackerDetail ?? 'Face tracking unavailable'}</Text>
+                </View>
+              )}
+            </>
+          }
+        />
+        {/* The toggle stays outside the tile: half a tile is a small target,
+            and this is a control rather than part of the picture. */}
         {tracker === 'running' ? (
           <TouchableOpacity
             style={[styles.linesToggle, showLines && { borderColor: accent }]}
@@ -215,17 +241,6 @@ export function MogOffScreen() {
             </Text>
           </TouchableOpacity>
         ) : null}
-        {tracker === 'loading' && (
-          <View style={styles.overlay}>
-            <ActivityIndicator color={accent} />
-            <Text style={styles.overlayText}>Loading the face model…</Text>
-          </View>
-        )}
-        {tracker === 'failed' && (
-          <View style={styles.overlay}>
-            <Text style={styles.overlayText}>{trackerDetail ?? 'Face tracking unavailable'}</Text>
-          </View>
-        )}
       </View>
 
       <Text style={styles.explain}>

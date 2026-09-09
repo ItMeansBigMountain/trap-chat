@@ -352,6 +352,14 @@ existed.
 - **A tile per person, camera or not.** Turning your camera off removes your
   face, not you. Two per row: it is what was asked for and the only column
   count that leaves a face readable on a phone.
+- **Competitive matches use the same grid.** Every ranked game used to show
+  your own camera and reduce your opponent to a number on a scoreboard -- you
+  could not see the person you were playing against at all, which for Mog Off
+  (a face-off) was absurd. `VideoGrid` takes `onLocalReady` so the pose or
+  face tracker attaches to the tile's own element, and `selfOverlay` for the
+  rep badge and the Mog Off lines. Detection reads the stream's intrinsic
+  resolution, not the tile's size, so sharing the frame with an opponent costs
+  a rep counter nothing.
 - The mesh is capped at `MAX_VIDEO_PEERS` (6) and the reason is in
   [SCALING.md](SCALING.md). Past the cap people keep their tile and lose their
   video, which is honest; silently dropping them would not be.

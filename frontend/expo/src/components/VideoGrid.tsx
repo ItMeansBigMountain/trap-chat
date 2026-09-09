@@ -34,17 +34,22 @@ function Stream({
   stream,
   muted,
   mirrored,
+  onElement,
 }: {
   stream: MediaStream;
   muted: boolean;
   mirrored?: boolean;
+  /** Handed the element itself, so a competitive screen can run pose or face
+   *  detection on the same feed the tile is showing. */
+  onElement?: (el: HTMLVideoElement) => void;
 }) {
   const ref = useRef<HTMLVideoElement | null>(null);
   useEffect(() => {
     if (ref.current && ref.current.srcObject !== stream) {
       ref.current.srcObject = stream;
     }
-  }, [stream]);
+    if (ref.current && stream) onElement?.(ref.current);
+  }, [stream, onElement]);
   if (!isWeb) return null;
   return React.createElement('video', {
     ref,
@@ -87,6 +92,8 @@ function Tile({
   mirrored,
   label,
   waiting,
+  onElement,
+  overlay,
 }: {
   name: string | null;
   stream: MediaStream | null;
@@ -95,12 +102,15 @@ function Tile({
   /** Shown under the name: "You", or why there is no picture. */
   label?: string;
   waiting?: boolean;
+  onElement?: (el: HTMLVideoElement) => void;
+  /** Drawn over this tile: the face lines, a rep stage badge, a loading state. */
+  overlay?: React.ReactNode;
 }) {
   const showing = hasVideo(stream);
   return (
     <View style={styles.tile} accessibilityLabel={`${name ?? 'Someone'} tile`}>
       {showing && stream ? (
-        <Stream stream={stream} muted={muted} mirrored={mirrored} />
+        <Stream stream={stream} muted={muted} mirrored={mirrored} onElement={onElement} />
       ) : (
         <View style={styles.placeholder}>
           {waiting ? (
@@ -113,6 +123,7 @@ function Tile({
           {label ? <Text style={styles.placeholderText}>{label}</Text> : null}
         </View>
       )}
+      {overlay}
       <View style={styles.nameplate} pointerEvents="none">
         <Text style={styles.nameplateText} numberOfLines={1}>
           {name ?? 'Someone'}
@@ -132,6 +143,9 @@ export function VideoGrid({
   cameraOff,
   onToggleMute,
   onToggleCamera,
+  onLocalReady,
+  selfOverlay,
+  showControls = true,
 }: {
   localStream: MediaStream | null;
   peers: PeerView[];
@@ -142,6 +156,13 @@ export function VideoGrid({
   cameraOff: boolean;
   onToggleMute: () => void;
   onToggleCamera: () => void;
+  /** The local video element, for pose or face detection. Detection reads the
+   *  stream's own resolution, not the size of the tile, so sharing the grid
+   *  with an opponent costs a rep counter nothing. */
+  onLocalReady?: (el: HTMLVideoElement) => void;
+  /** Drawn over your own tile: the Mog Off lines, a rep stage badge. */
+  selfOverlay?: React.ReactNode;
+  showControls?: boolean;
 }) {
   // You are always the first tile. Seeing yourself is how you know the camera
   // is working before you wonder why nobody is reacting to you.
@@ -153,6 +174,8 @@ export function VideoGrid({
       muted
       mirrored
       label={cameraOff ? 'Camera off' : localStream ? undefined : 'No camera'}
+      onElement={onLocalReady}
+      overlay={selfOverlay}
     />,
     ...peers.map((peer) => (
       <Tile
@@ -194,6 +217,7 @@ export function VideoGrid({
       )}
 
       {/* MIC AND CAMERA TOGGLES */}
+      {showControls ? (
       <View style={styles.controls}>
         <TouchableOpacity onPress={onToggleMute} style={[styles.pill, muted && styles.pillOff]}>
           <Text style={styles.pillText}>{muted ? 'Unmute' : 'Mute'}</Text>
@@ -202,6 +226,7 @@ export function VideoGrid({
           <Text style={styles.pillText}>{cameraOff ? 'Camera on' : 'Camera off'}</Text>
         </TouchableOpacity>
       </View>
+      ) : null}
     </View>
   );
 }

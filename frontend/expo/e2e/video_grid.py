@@ -137,6 +137,32 @@ with sync_playwright() as p:
 
     close(a, b)
 
+    # ---------- A COMPETITIVE MATCH ----------
+    # The gap the social grid did not close. Every ranked game showed you your
+    # own camera and reduced your opponent to a number on a scoreboard -- you
+    # could not see the person you were competing against at all. For Mog Off,
+    # which is a face-off, that was absurd.
+    for game, label in (("Push-Ups", "push-ups"), ("Shadow Boxing", "shadow boxing"),
+                        ("Mog Off", "mog off")):
+        ca = guest(browser, f"c{label[0]}a{t}")
+        cb = guest(browser, f"c{label[0]}b{t}")
+        to_page(ca, "Competitive")
+        ca.get_by_text(game, exact=True).first.click()
+        ca.wait_for_timeout(3000)
+        to_page(cb, "Competitive")
+        cb.get_by_text(game, exact=True).first.click()
+        cb.wait_for_timeout(7000)
+        ca.wait_for_timeout(3000)
+
+        check(f"{label}: both players reach the match",
+              "Ranked 1v1" in body(ca) or game in body(ca), one_line(ca))
+        check(f"{label}: you can see your opponent, not just their score",
+              tiles(ca) == 2, f"{tiles(ca)} tiles")
+        check(f"{label}: your own tile is still yours",
+              "(you)" in body(ca), one_line(ca, 200))
+
+        close(ca, cb)
+
     # ---------- A ROOM OF THREE ----------
     # The case the old single connection could not represent at all.
     host = guest(browser, f"gh{t}", wide=True)
