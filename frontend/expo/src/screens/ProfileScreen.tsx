@@ -260,6 +260,31 @@ export function ProfileScreen() {
         onChange={setVideoOn}
       />
 
+      {/* WHAT IS AND IS NOT KEPT */}
+      <Text style={styles.section}>PRIVACY</Text>
+      <View style={styles.privacy}>
+        <Text style={styles.privacyLine}>
+          <Text style={styles.privacyStrong}>Messages are not stored.</Text> Chat is
+          relayed between the people in the room and written down nowhere. Nobody
+          can read it back afterwards — not the other person, not an admin, not us.
+        </Text>
+        <Text style={styles.privacyLine}>
+          <Text style={styles.privacyStrong}>Video never touches our servers.</Text>{' '}
+          Camera and audio go straight between you and the people you are talking
+          to. The backend only passes the handshake that connects you.
+        </Text>
+        <Text style={styles.privacyLine}>
+          <Text style={styles.privacyStrong}>Rep counting happens on your device.</Text>{' '}
+          The pose and face models run in your browser, so no frames are uploaded
+          anywhere. Only the final score is sent.
+        </Text>
+        <Text style={styles.privacyLine}>
+          What is kept: your account, your rating and scores, and reports made
+          about somebody. Reports are kept because they are somebody else's safety
+          record.
+        </Text>
+      </View>
+
       {/* SECURITY, WHICH ONLY AN ACCOUNT HAS */}
       {!isGuest && <Security onSignedOut={logout} />}
 
@@ -324,6 +349,9 @@ const styles = StyleSheet.create({
   dangerLabel: { color: '#FF4757' },
   dangerLead: { color: '#a1a1a1', fontSize: 12, lineHeight: 18 },
   cancelText: { color: '#a1a1a1', fontWeight: '700', fontSize: 13 },
+  privacy: { backgroundColor: '#121212', borderRadius: 8, padding: 14, gap: 10 },
+  privacyLine: { color: '#a1a1a1', fontSize: 12, lineHeight: 18 },
+  privacyStrong: { color: '#fff', fontWeight: '800' },
   rowAction: { backgroundColor: '#121212', borderRadius: 8, padding: 14, marginBottom: 8 },
   rowActionText: { color: '#fff', fontWeight: '800', fontSize: 14 },
   rowActionHint: { color: '#a1a1a1', fontSize: 11, marginTop: 3, lineHeight: 15 },

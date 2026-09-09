@@ -45,6 +45,18 @@ export function AuthScreen() {
         <TextInput accessibilityLabel="Username" autoCapitalize="none" autoCorrect={false} editable={!submitting} onChangeText={setUsername} placeholder="Username" placeholderTextColor="#71717a" style={styles.input} value={username} />
         {mode === 'register' && <TextInput accessibilityLabel="Email (optional)" autoCapitalize="none" autoCorrect={false} editable={!submitting} keyboardType="email-address" onChangeText={setEmail} placeholder="Email (optional)" placeholderTextColor="#71717a" style={styles.input} value={email} />}
         <TextInput accessibilityLabel="Password" editable={!submitting} onChangeText={setPassword} placeholder="Password (8+ characters)" placeholderTextColor="#71717a" secureTextEntry style={styles.input} value={password} />
+        {/* Said before the button, not after. There is no reset by email --
+            no mail service -- so a forgotten password really does mean a new
+            account, and somebody deserves to know that while they are still
+            choosing one rather than a month later. */}
+        {mode === 'register' && (
+          <View style={styles.warning} accessibilityLabel="Password cannot be reset">
+            <Text style={styles.warningText}>
+              Do not forget this password. There is no password reset yet, so
+              there is no way to recover your account if you lose it.
+            </Text>
+          </View>
+        )}
         <TouchableOpacity accessibilityRole="button" disabled={submitting} onPress={submit} style={[styles.primary, submitting && styles.disabled]}>
           {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryText}>{mode === 'register' ? 'Create account' : 'Sign in'}</Text>}
         </TouchableOpacity>
@@ -72,6 +84,17 @@ const styles = StyleSheet.create({
   card: { maxWidth: 420, width: '100%' }, title: { color: '#fff', fontSize: 36, fontWeight: '800', textAlign: 'center' },
   subtitle: { color: '#a1a1aa', fontSize: 15, lineHeight: 22, marginBottom: 24, marginTop: 8, textAlign: 'center' },
   input: { backgroundColor: '#18181b', borderColor: '#3f3f46', borderRadius: 10, borderWidth: 1, color: '#fff', fontSize: 16, marginBottom: 12, padding: 14 },
+  // Red, bordered and above the button: this is the one thing on the screen
+  // that cannot be undone later.
+  warning: {
+    backgroundColor: 'rgba(255,71,87,0.10)',
+    borderColor: '#FF4757',
+    borderLeftWidth: 3,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 12,
+  },
+  warningText: { color: '#FF4757', fontSize: 12, fontWeight: '700', lineHeight: 17 },
   primary: { alignItems: 'center', backgroundColor: '#7B5CFF', borderRadius: 10, minHeight: 50, justifyContent: 'center', marginTop: 4 },
   primaryText: { color: '#fff', fontSize: 16, fontWeight: '700' }, disabled: { opacity: 0.65 },
   link: { alignItems: 'center', padding: 16 }, linkText: { color: '#7B5CFF', fontSize: 14 },

@@ -99,12 +99,43 @@ with sync_playwright() as p:
     t = int(time.time())
     who = f"sec{t}"
 
+    # The warning has to be on the screen where the choice is made, not in a
+    # help page nobody opens. Checked before registering, on the form itself.
+    entry = open_app(browser)
+    warned = body(entry)
+    check("account creation warns the password cannot be recovered",
+          "no password reset" in warned.lower(), warned[:220].replace(chr(10), " | "))
+    check("the warning is on the register form specifically",
+          entry.get_by_label("Password cannot be reset", exact=True).count() > 0,
+          warned[:160].replace(chr(10), " | "))
+
+    # And not shown to somebody signing in, who has already made the choice.
+    entry.get_by_text("Already have an account? Sign in", exact=True).click()
+    entry.wait_for_timeout(700)
+    check("signing in is not nagged about it",
+          "no password reset" not in body(entry).lower(),
+          body(entry)[:160].replace(chr(10), " | "))
+    try:
+        entry.context.close()
+    except Exception:
+        pass
+
     page = register(browser, who)
     to_profile(page)
     # Every label lookup here is exact: get_by_label matches substrings, so
     # "New password" also finds the "Save new password" button and the whole
     # thing fails as an ambiguity thirty seconds later.
     check("an account has a security section", "SECURITY" in body(page), one_line(page, 220))
+
+    # What is and is not kept. This is the honest answer to "can an admin read
+    # my chats", and it belongs where somebody would go looking for it.
+    settings = body(page)
+    check("settings state that messages are not stored",
+          "Messages are not stored" in settings, settings[:260].replace(chr(10), " | "))
+    check("settings state that video is peer to peer",
+          "never touches our servers" in settings, settings[:260].replace(chr(10), " | "))
+    check("settings say what is kept, not only what is not",
+          "What is kept" in settings, settings[:260].replace(chr(10), " | "))
     check("changing a password is offered",
           page.get_by_label("Change password", exact=True).count() > 0, one_line(page, 220))
     check("deleting the account is offered",
