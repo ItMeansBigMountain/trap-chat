@@ -254,6 +254,32 @@ class ApiService {
     });
   }
 
+  /** Change your password. Every other session ends; this one gets a new
+   *  token back, which has to be stored or you sign yourself out. */
+  async changePassword(currentPassword: string, newPassword: string): Promise<void> {
+    const result = await this.request<{ token?: string }>('/api/auth/password', {
+      method: 'POST',
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    });
+    if (result.token) this.setToken(result.token);
+  }
+
+  /** Drop every token but this one. For a device you no longer have. */
+  async signOutEverywhere(): Promise<void> {
+    const result = await this.request<{ token?: string }>('/api/auth/sessions', {
+      method: 'DELETE',
+    });
+    if (result.token) this.setToken(result.token);
+  }
+
+  async deleteAccount(password: string): Promise<void> {
+    await this.request('/api/auth/account', {
+      method: 'DELETE',
+      body: JSON.stringify({ password }),
+    });
+    this.setToken(null);
+  }
+
   async catchup(): Promise<Catchup> {
     return this.request('/api/me/catchup', { method: 'POST' });
   }

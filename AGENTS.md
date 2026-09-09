@@ -288,6 +288,46 @@ A test that inserts a `waiting` Match row directly has bypassed the endpoint
 that would have stamped it, so it must call `touch_match_presence()` itself or
 matchmaking will correctly refuse to offer its fictional opponent.
 
+## Account security
+
+What was already right: bcrypt via flask-bcrypt, `SECRET_KEY` a 64-character
+`random_password` injected from Terraform as a Container App secret (not the
+dev default in `app.py`), and both sign-in and sign-up rate limited to 10
+attempts per 5 minutes per caller, reading the first entry of
+`X-Forwarded-For` because Container Apps sits behind a proxy.
+
+What was missing, and now is not:
+
+- **Tokens can be revoked.** A JWT lasts 30 days and signing out only forgot
+  it on the device doing the forgetting, so a leaked token was good for a
+  month and changing a password did nothing about it. `token_version` lives in
+  `preferences_json` and is a claim in the token; bumping it invalidates
+  everything issued before. Tokens minted before this carry no claim and
+  default to the same 0 an untouched account has, so deploying it signs
+  nobody out.
+- **Changing a password requires the current one**, or anybody holding a token
+  could lock the owner out of their own account -- a leak becoming a theft. It
+  revokes every other session, which includes the one that asked, so a fresh
+  token comes back in the body and the client must store it.
+- **`DELETE /api/auth/account`.** Apple requires this of any app that lets you
+  make an account (see [MOBILE.md](MOBILE.md)). Matches are anonymised rather
+  than deleted: the other player's rating was built on those results and
+  erasing them would quietly rewrite somebody else's record. Reports *about*
+  the account are kept and unlinked, because they are somebody else's safety
+  record.
+- **Login takes the same time whether or not the username exists.** It used to
+  return before bcrypt ran when there was no such user, which answers
+  measurably faster and tells an attacker which usernames are real.
+- **`password_problem()` is the one place the rules live**, shared by register
+  and change. Eight characters was previously the only rule, so `password` and
+  `12345678` both passed. `COMMON_PASSWORDS` is a short list of the ones that
+  actually get tried, not a dictionary -- a real wordlist is a file to ship
+  and maintain, and nearly all the value is in the first few entries.
+
+Still absent, deliberately: password reset by email. There is no mail service
+and adding one is a bill and a deliverability problem; the honest state is
+that a forgotten password means a new account until that changes.
+
 ## Video is a mesh, and everybody gets a tile
 
 `webrtc.ts` holds one `RTCPeerConnection` per peer, keyed by **socket id**.

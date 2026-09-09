@@ -75,9 +75,9 @@ These are the things that fail review rather than fail to compile:
 
 - **Permission strings** already exist in `app.config.ts`. Apple rejects
   vague ones; ours name what the camera and microphone are for.
-- **Account deletion.** Apple requires an in-app way to delete an account for
-  any app that lets you make one. There is no delete endpoint today. This is
-  a hard requirement, not a nice-to-have.
+- ~~**Account deletion.**~~ Done. `DELETE /api/auth/account` asks for the
+  password and is wired to Profile → Security. Matches are anonymised rather
+  than deleted, so the other player's record survives.
 - **A privacy policy URL**, reachable and specific about the camera. Worth
   saying plainly that pose and face detection run on the device and no frames
   are uploaded, because it is true and it is unusual.
@@ -91,8 +91,8 @@ These are the things that fail review rather than fail to compile:
 
 ## Honest order of work
 
-1. Report and block, plus account deletion. Nothing ships without these, and
-   they are useful on the web build too.
+1. ~~Report and block, plus account deletion.~~ Both shipped, and both are
+   useful on the web build too.
 2. `react-native-webrtc` and `expo-camera`, giving a native build that can do
    social chat.
 3. Frame-processor pose detection, giving back the competitive games.

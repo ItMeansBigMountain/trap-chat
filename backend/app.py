@@ -137,6 +137,46 @@ def cookie_options():
 
 db = SQLAlchemy(app)
 bcrypt = Bcrypt(app)
+
+MIN_PASSWORD_LENGTH = 8
+
+# The handful that actually get tried. This is not a dictionary and is not
+# meant to be one: a real check needs a wordlist we would have to ship and
+# keep, and the value is almost all in the first few entries. Eight characters
+# was the only rule before this, so "password" and "12345678" both passed.
+COMMON_PASSWORDS = {
+    'password', 'password1', 'password123', '12345678', '123456789',
+    '1234567890', 'qwerty123', 'qwertyui', 'iloveyou', 'letmein1',
+    'trapchat', 'trustno1', 'sunshine', 'princess', 'football',
+    'baseball', 'welcome1', 'admin123', 'abc12345', '11111111',
+    '00000000', 'monkey123', 'dragon123', 'passw0rd', 'p@ssword',
+}
+
+
+def password_problem(password, username=None):
+    """Why this password will not do, or None if it will.
+
+    Shared by registration and by changing one. They used to be a single
+    length check in a single place; once there are two places, the rules have
+    to live somewhere both can reach or they drift.
+    """
+    if len(password) < MIN_PASSWORD_LENGTH:
+        return f'password must be at least {MIN_PASSWORD_LENGTH} characters'
+    lowered = password.lower()
+    if lowered in COMMON_PASSWORDS:
+        return 'that password is one of the most common ones. Pick another'
+    if len(set(password)) == 1:
+        return 'password cannot be the same character repeated'
+    if username and lowered == username.lower():
+        return 'password cannot be your username'
+    return None
+
+
+# A hash to check against when the username does not exist, so a wrong
+# username costs the same time as a wrong password. Without it, "no such user"
+# returned before bcrypt ran and answered measurably faster, which tells an
+# attacker which usernames are real.
+_ABSENT_USER_HASH = bcrypt.generate_password_hash('no-such-user').decode('utf-8')
 socketio = SocketIO(app, cors_allowed_origins='*', async_mode='threading')
 
 def _storage_metadata():
@@ -183,15 +223,49 @@ class User(db.Model):
     def check_password(self, pw):
         return bcrypt.check_password_hash(self.password_hash, pw)
 
+    @property
+    def token_version(self):
+        """Bumped to invalidate every token already issued.
+
+        A signed token is valid until it expires, and these last 30 days, so
+        without this a leaked one works for a month and changing your password
+        does nothing about it -- which is the single thing people change a
+        password *for*. Kept in preferences rather than a new column because
+        production is a live SQLite file on an SMB share and create_all() does
+        not alter a table that already exists.
+        """
+        try:
+            return int(self.prefs().get('token_version', 0))
+        except (TypeError, ValueError):
+            return 0
+
+    def revoke_tokens(self):
+        """Sign out everywhere. The caller needs a fresh token afterwards."""
+        prefs = self.prefs()
+        prefs['token_version'] = self.token_version + 1
+        self.set_prefs(prefs)
+
     def to_token(self):
-        payload = {'uid': self.id, 'exp': datetime.utcnow() + timedelta(hours=JWT_EXP_HOURS)}
+        payload = {
+            'uid': self.id,
+            'tv': self.token_version,
+            'exp': datetime.utcnow() + timedelta(hours=JWT_EXP_HOURS),
+        }
         return jwt.encode(payload, SECRET_KEY, algorithm='HS256')
 
     @staticmethod
     def from_token(token):
         try:
             payload = jwt.decode(token, SECRET_KEY, algorithms=['HS256'])
-            return db.session.get(User, payload['uid'])
+            user = db.session.get(User, payload['uid'])
+            if user is None:
+                return None
+            # Tokens minted before versioning carry no claim, and default to
+            # the same 0 an untouched account has -- so nobody is signed out
+            # by deploying this, only by revoking deliberately.
+            if int(payload.get('tv', 0)) != user.token_version:
+                return None
+            return user
         except Exception:
             return None
 
@@ -789,8 +863,9 @@ def api_register():
         return jsonify({'error': 'username and password required'}), 400
     if not re.fullmatch(r'[A-Za-z0-9_-]{3,50}', username):
         return jsonify({'error': 'username must be 3-50 letters, numbers, _ or -'}), 400
-    if len(password) < 8:
-        return jsonify({'error': 'password must be at least 8 characters'}), 400
+    problem = password_problem(password, username)
+    if problem:
+        return jsonify({'error': problem}), 400
     if User.query.filter_by(username=username).first():
         return jsonify({'error': 'username taken'}), 400
     if email and User.query.filter_by(email=email).first():
@@ -821,7 +896,13 @@ def api_login():
     username = (data.get('username') or '').strip()
     password = data.get('password') or ''
     u = User.query.filter_by(username=username).first()
-    if not u or not u.check_password(password):
+    if u is None:
+        # Check against a throwaway hash anyway. Returning early here made a
+        # wrong username answer measurably faster than a wrong password, which
+        # is a way to find out which usernames exist.
+        bcrypt.check_password_hash(_ABSENT_USER_HASH, password)
+        return jsonify({'error': 'invalid credentials'}), 401
+    if not u.check_password(password):
         return jsonify({'error': 'invalid credentials'}), 401
     clear_rate_limit('login')
     token = u.to_token()
@@ -879,6 +960,124 @@ def api_me():
     if guest_sess:
         return jsonify({'guest': True, 'guest_session_id': guest_sess})
     return jsonify({'user': None})
+
+
+@app.route('/api/auth/password', methods=['POST'])
+@auth_required
+def api_change_password():
+    """Change your password, and end every other session while you are at it.
+
+    Requires the current one. Without that, anybody who got hold of a signed
+    token -- a shared computer, a copied link -- could lock the owner out of
+    their own account, which turns a leak into a theft.
+
+    Changing it revokes every token issued before now, including the one that
+    made this request, so a fresh one comes back in the body. A password
+    change that left the old sessions alive would not be a password change.
+    """
+    retry_after = rate_limited('password')
+    if retry_after is not None:
+        return jsonify({
+            'error': 'too many attempts, try again shortly',
+            'retry_after': retry_after,
+        }), 429
+
+    data = request.get_json() or {}
+    current = data.get('current_password') or ''
+    new_password = data.get('new_password') or ''
+    user = request.user
+
+    if not user.check_password(current):
+        return jsonify({'error': 'current password is wrong'}), 403
+    problem = password_problem(new_password, user.username)
+    if problem:
+        return jsonify({'error': problem}), 400
+    if new_password == current:
+        return jsonify({'error': 'that is already your password'}), 400
+
+    user.set_password(new_password)
+    user.revoke_tokens()
+    db.session.commit()
+    clear_rate_limit('password')
+
+    token = user.to_token()
+    resp = jsonify({'ok': True, 'token': token})
+    resp.set_cookie('auth_token', token, **cookie_options())
+    return resp
+
+
+@app.route('/api/auth/sessions', methods=['DELETE'])
+@auth_required
+def api_sign_out_everywhere():
+    """Drop every token but the one this call gets back.
+
+    Signing out only forgot the token on this device; the token itself stayed
+    valid for its full 30 days. This is the version that actually ends a
+    session you no longer control.
+    """
+    user = request.user
+    user.revoke_tokens()
+    db.session.commit()
+    token = user.to_token()
+    resp = jsonify({'ok': True, 'token': token})
+    resp.set_cookie('auth_token', token, **cookie_options())
+    return resp
+
+
+@app.route('/api/auth/account', methods=['DELETE'])
+@auth_required
+def api_delete_account():
+    """Delete the account, for real.
+
+    Apple requires an in-app way to delete an account from any app that lets
+    you make one, so this is a store requirement as well as the right thing --
+    see MOBILE.md. It asks for the password because deletion cannot be undone
+    and a signed token is a weaker claim than knowing the password.
+
+    Matches are kept and anonymised rather than deleted: they have another
+    player in them whose rating and history are built on those results, and
+    erasing them would quietly rewrite somebody else's record.
+    """
+    data = request.get_json() or {}
+    if not request.user.check_password(data.get('password') or ''):
+        return jsonify({'error': 'password is wrong'}), 403
+
+    user = request.user
+    name = user.username
+
+    # Their results stay, without their name on them. The other player's
+    # rating and history were built on these, and deleting them would quietly
+    # rewrite somebody else's record.
+    for player in MatchPlayer.query.filter_by(user_id=user.id).all():
+        player.user_id = None
+        player.display_name = 'Deleted player'
+    for match in Match.query.filter_by(host_user_id=user.id).all():
+        match.host_user_id = None
+    for room in Room.query.filter_by(host_user_id=user.id).all():
+        room.host_user_id = None
+    for vote in BattleVote.query.filter_by(voter_user_id=user.id).all():
+        vote.voter_user_id = None
+
+    # Their own entries go: a leaderboard row is a name on a board, and a
+    # block only exists to protect the person who made it.
+    Leaderboard.query.filter_by(user_id=user.id).delete()
+    Block.query.filter_by(blocker_user_id=user.id).delete()
+    Block.query.filter_by(blocked_user_id=user.id).delete()
+    Report.query.filter_by(reporter_user_id=user.id).delete()
+
+    # Reports *about* them are somebody else's safety record, so they are kept
+    # and unlinked. reported_name still says who it was.
+    for report in Report.query.filter_by(reported_user_id=user.id).all():
+        report.reported_user_id = None
+
+    db.session.delete(user)
+    db.session.commit()
+    record_event('account_deleted')
+    app.logger.info('account deleted: %s', name)
+
+    resp = jsonify({'ok': True})
+    resp.set_cookie('auth_token', '', expires=0)
+    return resp
 
 
 @app.route('/api/auth/logout', methods=['POST'])
@@ -1671,6 +1870,7 @@ KNOWN_EVENTS = {
     'social_skipped',
     'user_blocked',
     'user_reported',
+    'account_deleted',
 }
 
 # How long events are kept. Long enough to compare a week to the one before,
