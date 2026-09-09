@@ -14,6 +14,7 @@ re-check for divergence immediately before pushing.
 | Frontend | https://zealous-bay-02a100210.3.azurestaticapps.net |
 | Backend | https://trap-chat-api.bluerock-306ed9db.centralus.azurecontainerapps.io |
 | Health | `/api/health` |
+| Admin | `/admin/login` on the backend host |
 | Subscription | `4f070006-f5e7-471d-a859-b15a2a8ee406` (oyamaProductions) |
 | Resource group | `rg-trap-chat-prod` (Central US) |
 | Container App | `trap-chat-api` in env `cae-trap-chat-prod` |
@@ -304,8 +305,22 @@ the interesting part. One dependency, plus WTForms.
 - **Empty means the panel does not exist.** Every `/admin` route 404s rather
   than 403s, because a 403 confirms there is something worth attacking. This
   is the default, so an unconfigured deploy has no admin surface at all.
+- **Two tiers.** `ADMIN_USERNAMES` is the root of trust and cannot be changed
+  from inside the app. The **Admins** view grants the everyday tier, so adding
+  a colleague does not need a deploy -- and a grant is a row in `admin_grants`,
+  its own table, written only by the panel. It is emphatically *not* a flag in
+  `preferences_json`, which any signed-in person can `PUT` to. A root admin has
+  no row and cannot be revoked from the panel, which is the way back in if the
+  grants table is ever emptied. Grants are re-checked on every request, so
+  revoking one takes effect immediately rather than when a session expires.
+- **`PUT /api/auth/preferences` takes an allowlist** (`USER_OWNED_PREFERENCES`).
+  It used to write whatever JSON it was handed into the same blob that holds
+  `banned` and `token_version`. That was not exploitable -- a banned account
+  cannot get a token to call it with -- but it is one key away from being
+  catastrophic, and that key is `admin`. This is the reason admin rights live
+  in a table instead.
 - **An admin still signs in with their own account password**, and the panel
-  checks both that the name is on the list and that the password is right.
+  checks both that they are an admin and that the password is right.
   Failures give one message either way, or the form becomes a way to
   enumerate the staff list. The same rate limiter as sign-in applies.
 - **Admin sessions are a Flask session cookie, not the app's JWT**, and last
@@ -317,6 +332,12 @@ the interesting part. One dependency, plus WTForms.
   only bites at the next sign-in is no ban at all -- a banned person has no
   reason to sign in again. Banning also revokes tokens. Stored in
   `preferences_json`, so no migration.
+- **The pipeline checks the lock.** `backend CICD` asks for `/admin/` and
+  `/admin/user/` without a session after every deploy and fails the run on a
+  200. An admin page reachable without signing in would hand a stranger every
+  account, report and match in the product, so it is not something to notice
+  later. A 404 (panel disabled) is reported as such rather than passing in
+  silence, because a panel that quietly stopped existing looks identical.
 - **A failure to mount must never take the backend down.** The import and the
   mount are both wrapped: matches and chat are the product, this is a staff
   tool.

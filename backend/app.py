@@ -398,6 +398,36 @@ class Report(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
 
 
+class AdminGrant(db.Model):
+    """Someone made an admin from inside the panel.
+
+    There are two tiers on purpose. `ADMIN_USERNAMES` in the environment is
+    the root of trust: it can only change through an approved infrastructure
+    apply, and it cannot be revoked from inside the app, so there is always a
+    way back in if the grants table is emptied by accident or malice.
+
+    Rows here are the everyday tier -- an admin adding a colleague without a
+    deploy. The property that makes this safe is that **nothing a user can
+    reach writes this table**. It is not a flag in preferences_json, which any
+    signed-in person can PUT to; it is its own table, written only by the
+    admin panel, which is itself behind the panel's login.
+
+    `granted_by` is a username string rather than a foreign key so the record
+    of who granted it survives that person deleting their account.
+    """
+
+    __tablename__ = 'admin_grants'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, unique=True, index=True)
+    granted_by = db.Column(db.String(50), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    user = db.relationship('User', foreign_keys=[user_id])
+
+    def __str__(self):
+        return self.user.username if self.user else f'user {self.user_id}'
+
+
 class Event(db.Model):
     """One thing that happened, for counting later.
 
@@ -969,7 +999,10 @@ def api_guest():
 def api_me():
     user = getattr(request, 'user', None)
     if user:
-        return jsonify({'user': {'id': user.id, 'username': user.username, 'email': user.email, 'preferences': user.prefs(), 'rating': user.rating, 'lat': user.lat, 'lng': user.lng}})
+        # Their own settings only. The same blob holds token_version and the
+        # ladder marks, which are the server's bookkeeping and not theirs.
+        prefs = {k: v for k, v in user.prefs().items() if k in USER_OWNED_PREFERENCES}
+        return jsonify({'user': {'id': user.id, 'username': user.username, 'email': user.email, 'preferences': prefs, 'rating': user.rating, 'lat': user.lat, 'lng': user.lng}})
     guest_sess = guest_session_id()
     if guest_sess:
         return jsonify({'guest': True, 'guest_session_id': guest_sess})
@@ -1102,16 +1135,51 @@ def api_logout():
     return resp
 
 
+# preferences_json holds two very different things: settings the owner picks,
+# and facts the server keeps about them. Only the first list may be written by
+# the person themselves.
+#
+# It used to take whatever JSON it was handed, straight into the same blob
+# that holds `banned`, `token_version` and the ladder marks. That was not
+# exploitable -- a banned account cannot get a token to call this with, and
+# rewriting your own token_version only signs you out -- but it is one key
+# away from being catastrophic, and the key it is one away from is `admin`.
+# An allowlist is the reason admin rights can never live here.
+USER_OWNED_PREFERENCES = {
+    'game_filters',
+    'max_players',
+    'local_radius_km',
+    'notifications',
+    'theme',
+}
+
+
 @app.route('/api/auth/preferences', methods=['PUT'])
 @auth_required
 def api_prefs():
     data = request.get_json() or {}
+    if not isinstance(data, dict):
+        return jsonify({'error': 'preferences must be an object'}), 400
+
+    rejected = sorted(set(data) - USER_OWNED_PREFERENCES)
+    if rejected:
+        # Named rather than silently dropped: a setting that vanishes without
+        # a word is a bug report, and a client sending one deserves to know.
+        return jsonify({
+            'error': f'not settable here: {", ".join(rejected)}',
+            'allowed': sorted(USER_OWNED_PREFERENCES),
+        }), 400
+
     user = request.user
     prefs = user.prefs()
     prefs.update(data)
     user.set_prefs(prefs)
     db.session.commit()
-    return jsonify({'preferences': prefs})
+    # Only their own settings come back. The server's own bookkeeping in the
+    # same blob is nobody else's business.
+    return jsonify({
+        'preferences': {k: v for k, v in prefs.items() if k in USER_OWNED_PREFERENCES}
+    })
 
 
 @app.route('/api/auth/location', methods=['PUT'])
@@ -2567,6 +2635,7 @@ try:
             'Room': Room,
             'Leaderboard': Leaderboard,
             'Event': Event,
+            'AdminGrant': AdminGrant,
         },
         check_password=lambda user, raw: user.check_password(raw),
         rate_limited=rate_limited,

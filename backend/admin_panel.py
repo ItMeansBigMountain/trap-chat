@@ -43,13 +43,24 @@ except ImportError:  # pragma: no cover - exercised only without the dependency
     ADMIN_AVAILABLE = False
 
 
-def admin_usernames():
+def root_admins():
+    """The admins the environment names, which the app itself cannot change.
+
+    This is the root of trust and the lockout recovery: if the grants table
+    is emptied, by accident or by somebody who got in, these accounts still
+    work and can put it back.
+    """
     raw = os.environ.get('ADMIN_USERNAMES', '')
     return {name.strip().lower() for name in raw.split(',') if name.strip()}
 
 
+# Kept as the old name too: `admin_enabled` reads better beside it and the
+# tests speak in these terms.
+admin_usernames = root_admins
+
+
 def admin_enabled():
-    return ADMIN_AVAILABLE and bool(admin_usernames())
+    return ADMIN_AVAILABLE and bool(root_admins())
 
 
 # How long an admin session lasts before it has to be re-established. Short on
@@ -58,9 +69,25 @@ def admin_enabled():
 ADMIN_SESSION_HOURS = 8
 
 
+# Set by mount_admin, so the session check can ask the database whether a
+# grant still stands. Checked on every request rather than trusted from the
+# cookie: revoking an admin has to take effect now, not when their session
+# happens to expire.
+_is_admin = None
+
+
+def is_admin_username(username):
+    """Root admins, plus anyone an admin has granted from the panel."""
+    if not username:
+        return False
+    if username.lower() in root_admins():
+        return True
+    return bool(_is_admin and _is_admin(username))
+
+
 def _session_is_live():
     who = session.get('admin_user')
-    if not who or who.lower() not in admin_usernames():
+    if not is_admin_username(who):
         return False
     started = session.get('admin_since')
     if not started:
@@ -108,7 +135,18 @@ def mount_admin(app, db, models, *, check_password, rate_limited, clear_rate_lim
         return False
 
     User = models['User']
-    allowed = admin_usernames
+    AdminGrant = models['AdminGrant']
+
+    # Let the module-level session check reach the grants table.
+    global _is_admin
+
+    def _granted(username):
+        user = User.query.filter_by(username=username).first()
+        if user is None:
+            return False
+        return AdminGrant.query.filter_by(user_id=user.id).first() is not None
+
+    _is_admin = _granted
 
     def guard():
         """Every route goes through here. A 404 rather than a 403, because a
@@ -136,7 +174,7 @@ def mount_admin(app, db, models, *, check_password, rate_limited, clear_rate_lim
                 user = User.query.filter_by(username=username).first()
                 ok = (
                     user is not None
-                    and username.lower() in allowed()
+                    and is_admin_username(username)
                     and check_password(user, password)
                 )
                 if ok:
@@ -259,6 +297,45 @@ def mount_admin(app, db, models, *, check_password, rate_limited, clear_rate_lim
         column_default_sort = ('best_score', True)
         can_create = False
 
+    class AdminGrantView(Guarded):
+        """Making a colleague an admin, without a deploy.
+
+        The one thing this cannot do is remove a root admin: those come from
+        the environment and have no row here. That is deliberate -- it is the
+        way back in if this table is emptied.
+        """
+
+        column_list = ('id', 'user', 'granted_by', 'created_at')
+        column_labels = {'user': 'Account'}
+        column_default_sort = ('id', True)
+        form_columns = ('user',)
+
+        def on_model_change(self, form, model, is_created):
+            if is_created:
+                # Recorded from the session rather than the form, so it says
+                # who actually did it and cannot be typed in as somebody else.
+                model.granted_by = session.get('admin_user')
+
+        def create_form(self, obj=None):
+            form = super().create_form(obj)
+            self._explain(form)
+            return form
+
+        def edit_form(self, obj=None):
+            form = super().edit_form(obj)
+            self._explain(form)
+            return form
+
+        @staticmethod
+        def _explain(form):
+            if hasattr(form, 'user') and form.user is not None:
+                form.user.description = (
+                    'The account becomes an admin immediately and can sign in '
+                    'at /admin/login with their own password. Root admins from '
+                    'ADMIN_USERNAMES are not listed here and cannot be removed '
+                    'from this screen.'
+                )
+
     class ReadOnly(Guarded):
         can_create = False
         can_edit = False
@@ -286,6 +363,7 @@ def mount_admin(app, db, models, *, check_password, rate_limited, clear_rate_lim
     # is gone and passing it is a TypeError.
     admin = Admin(app, name='Trap Chat', index_view=Home(url='/admin'))
     admin.add_view(UserView(User, db.session, name='Accounts'))
+    admin.add_view(AdminGrantView(AdminGrant, db.session, name='Admins'))
     admin.add_view(ReportView(models['Report'], db.session, name='Reports'))
     admin.add_view(Guarded(models['Block'], db.session, name='Blocks'))
     admin.add_view(MatchView(models['Match'], db.session, name='Matches'))

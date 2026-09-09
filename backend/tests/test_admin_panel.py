@@ -129,8 +129,9 @@ def test_the_failure_message_does_not_say_which_part_was_wrong(tmp_path):
 # An earlier version of this test listed /admin/accounts/, which does not
 # exist -- so it passed on a 404 and proved nothing about the guard.
 ADMIN_VIEWS = (
-    "/admin/", "/admin/user/", "/admin/report/", "/admin/block/",
-    "/admin/match/", "/admin/room/", "/admin/leaderboard/", "/admin/event/",
+    "/admin/", "/admin/user/", "/admin/admingrant/", "/admin/report/",
+    "/admin/block/", "/admin/match/", "/admin/room/", "/admin/leaderboard/",
+    "/admin/event/",
 )
 
 
@@ -222,3 +223,122 @@ def test_unbanning_lets_them_back(tmp_path):
     assert module.app.test_client().post(
         "/api/auth/login", json={"username": "forgiven", "password": "Str0ng-Pass!1"}
     ).status_code == 200
+
+
+# ---------------------------------------------------------------- new admins
+
+def grant(module, username, by="boss"):
+    """What the Admins view does when you add a row."""
+    with module.app.app_context():
+        user = module.User.query.filter_by(username=username).first()
+        module.db.session.add(
+            module.AdminGrant(user_id=user.id, granted_by=by)
+        )
+        module.db.session.commit()
+
+
+def test_an_admin_can_make_another_admin(tmp_path):
+    """Adding a colleague should not need a deploy."""
+    module = load(tmp_path, admins="boss")
+    register(module, "boss")
+    register(module, "colleague")
+
+    _, before = sign_in_to_admin(module, "colleague")
+    assert b"not accepted" in before.data, "an ungranted account got in"
+
+    grant(module, "colleague")
+
+    client, after = sign_in_to_admin(module, "colleague")
+    assert after.status_code == 302, after.get_data(as_text=True)
+    assert client.get("/admin/").status_code == 200
+
+
+def test_revoking_a_grant_takes_effect_at_once(tmp_path):
+    """Checked on every request rather than trusted from the cookie, or
+    removing an admin would wait for their session to expire."""
+    module = load(tmp_path, admins="boss")
+    register(module, "boss")
+    register(module, "temp")
+    grant(module, "temp")
+
+    client, _ = sign_in_to_admin(module, "temp")
+    assert client.get("/admin/").status_code == 200
+
+    with module.app.app_context():
+        module.AdminGrant.query.delete()
+        module.db.session.commit()
+
+    assert client.get("/admin/", follow_redirects=False).status_code == 302
+
+
+def test_a_root_admin_survives_the_grants_table_being_emptied(tmp_path):
+    """The lockout recovery. Root admins come from the environment and have no
+    row to delete, so there is always a way back in."""
+    module = load(tmp_path, admins="boss")
+    register(module, "boss")
+
+    with module.app.app_context():
+        module.AdminGrant.query.delete()
+        module.db.session.commit()
+
+    client, response = sign_in_to_admin(module, "boss")
+    assert response.status_code == 302
+    assert client.get("/admin/").status_code == 200
+
+
+def test_a_grant_records_who_made_it(tmp_path):
+    module = load(tmp_path, admins="boss")
+    register(module, "boss")
+    register(module, "recorded")
+    grant(module, "recorded", by="boss")
+
+    with module.app.app_context():
+        row = module.AdminGrant.query.first()
+        assert row.granted_by == "boss"
+
+
+# ------------------------------------------------- the self-promotion hole
+
+def test_a_user_cannot_write_arbitrary_preferences(tmp_path):
+    """preferences_json holds `banned` and `token_version` beside the owner's
+    own settings, and this endpoint used to take whatever JSON it was handed.
+    It is the reason admin rights live in their own table and not in there."""
+    module = load(tmp_path, admins="boss")
+    client = register(module, "sneaky")
+
+    response = client.put("/api/auth/preferences", json={"admin": True, "banned": False})
+    assert response.status_code == 400, response.get_data(as_text=True)
+
+    with module.app.app_context():
+        prefs = module.User.query.filter_by(username="sneaky").first().prefs()
+        assert "admin" not in prefs
+
+
+def test_a_user_cannot_rewrite_their_own_token_version(tmp_path):
+    module = load(tmp_path, admins="boss")
+    client = register(module, "versioner")
+
+    assert client.put(
+        "/api/auth/preferences", json={"token_version": 99}
+    ).status_code == 400
+
+
+def test_real_settings_still_save(tmp_path):
+    """An allowlist that blocks the actual settings would be a worse bug."""
+    module = load(tmp_path, admins="boss")
+    client = register(module, "settler")
+
+    response = client.put("/api/auth/preferences", json={"theme": "dark", "notifications": False})
+    assert response.status_code == 200, response.get_data(as_text=True)
+    assert response.get_json()["preferences"]["theme"] == "dark"
+
+
+def test_the_server_bookkeeping_is_not_handed_back(tmp_path):
+    """token_version and the ladder marks share the blob and are not theirs."""
+    module = load(tmp_path, admins="boss")
+    client = register(module, "peeker")
+    client.post("/api/me/catchup")
+
+    prefs = client.get("/api/auth/me").get_json()["user"]["preferences"]
+    assert "token_version" not in prefs
+    assert "seen_at" not in prefs

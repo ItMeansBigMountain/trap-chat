@@ -159,6 +159,7 @@ jobs:
             if [ "$served" = "$GITHUB_SHA" ]; then
               echo "this build is live"
               echo "- Backend: https://${fqdn}/api/health" >> "$GITHUB_STEP_SUMMARY"
+              echo "- Admin: https://${fqdn}/admin/login" >> "$GITHUB_STEP_SUMMARY"
               exit 0
             fi
             echo "attempt $i: serving '${served:-nothing}', want ${GITHUB_SHA}"
@@ -172,6 +173,35 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+
+      # THE ADMIN PANEL IS EITHER ABSENT OR LOCKED, NEVER OPEN
+      - name: Verify the admin panel
+        run: |
+          url="${{ steps.api.outputs.url }}"
+          login=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "${url}/admin/login")
+          panel=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "${url}/admin/")
+          accounts=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "${url}/admin/user/")
+          echo "login=${login} panel=${panel} accounts=${accounts}"
+
+          if [ "$login" = "404" ]; then
+            # ADMIN_USERNAMES is unset, so the panel does not exist. That is a
+            # valid state and the default, but say so rather than passing in
+            # silence -- a panel that quietly stopped existing looks the same.
+            echo "- Admin panel: **disabled** (ADMIN_USERNAMES is not set)" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          # The failure that matters. An admin page reachable without signing
+          # in would hand a stranger every account, report and match in the
+          # product, so it fails the deploy rather than being noticed later.
+          for code in "$panel" "$accounts"; do
+            if [ "$code" = "200" ]; then
+              echo "::error title=Admin panel is unlocked::/admin answered 200 without a session"
+              exit 1
+            fi
+          done
+
+          echo "- Admin panel: enabled and locked (${url}/admin/login)" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Post-deployment integration tests
         run: |

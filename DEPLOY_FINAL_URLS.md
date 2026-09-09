@@ -5,6 +5,7 @@ Verified 2026-09-06 UTC.
 - Public frontend: https://zealous-bay-02a100210.3.azurestaticapps.net
 - Public backend: https://trap-chat-api.bluerock-306ed9db.centralus.azurecontainerapps.io
 - Health: https://trap-chat-api.bluerock-306ed9db.centralus.azurecontainerapps.io/api/health
+- Admin: https://trap-chat-api.bluerock-306ed9db.centralus.azurecontainerapps.io/admin/login
 - Games API: https://trap-chat-api.bluerock-306ed9db.centralus.azurecontainerapps.io/api/games
 - Azure resource group: rg-trap-chat-prod
 - Azure Container App: trap-chat-api
