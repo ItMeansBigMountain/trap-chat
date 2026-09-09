@@ -57,6 +57,23 @@ jobs:
         working-directory: backend
         run: pip install --no-cache-dir -r requirements.txt pytest==8.3.5
 
+      # KNOWN VULNERABILITIES IN WHAT WE SHIP
+      # A one-off upgrade fixes today; this is what stops it rotting again.
+      # Advisory-only: a new CVE published overnight in a transitive package
+      # must not block a deploy that fixes something else, so it annotates
+      # loudly and the run goes on. Read the annotation.
+      - name: Audit dependencies
+        working-directory: backend
+        continue-on-error: true
+        run: |
+          pip install --quiet pip-audit
+          if ! pip-audit -r requirements.txt --progress-spinner off > audit.txt 2>&1; then
+            echo "::warning title=Vulnerable dependencies::$(head -1 audit.txt)"
+            cat audit.txt
+          else
+            echo "no known vulnerabilities"
+          fi
+
       # COMPILE CHECK, THEN RUN TESTS
       - name: Test
         working-directory: backend

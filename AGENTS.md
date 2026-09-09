@@ -853,6 +853,21 @@ previous build reported the new one as broken.
 **HTTP 200 is not a working app.** The post-deployment suites exist because
 the site once returned 200 while pointing at a test backend.
 
+## Dependencies
+
+`pip-audit` found 19 known vulnerabilities across five packages, including
+**PyJWT, which validates every auth token this app issues**. They were
+upgraded together and `backend/requirements.txt` pins exact versions.
+
+- **Flask-SocketIO must be pinned high.** 5.3.6 declares no upper bound on
+  Flask, so pip resolved it happily against Flask 3 and then broke at runtime
+  on `RequestContext.session` becoming read-only. The resolver could not see
+  it; the test suite could. Run the suite after any dependency change --
+  "it installed" is not "it works".
+- `backend CICD` runs `pip-audit` on every build. It is **advisory**, not
+  blocking: a CVE published overnight in a transitive package must not stop a
+  deploy that fixes something else. It annotates the run, so read the warning.
+
 ## Secrets
 
 - Never commit secrets, and never print secret values into logs or terminal

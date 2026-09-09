@@ -1,10 +1,18 @@
-Flask==2.3.3
-Flask-SocketIO==5.3.6
+# Pinned exactly, and upgraded together in one go after pip-audit found 19
+# known vulnerabilities across five of them -- including PyJWT, which is what
+# validates every auth token this app issues.
+#
+# Flask-SocketIO is pinned high on purpose: 5.3.6 declares no upper bound on
+# Flask, so pip happily resolved it against Flask 3 and then broke at runtime
+# on RequestContext.session becoming read-only. The test suite caught it; the
+# resolver could not.
+Flask==3.1.3
+Flask-SocketIO==5.6.1
 Flask-SQLAlchemy==3.0.5
 Flask-Bcrypt==1.0.1
-Flask-Cors==4.0.1
-PyJWT==2.8.0
-python-dotenv==1.0.0
-gunicorn==21.2.0
+Flask-Cors==6.0.5
+PyJWT==2.13.0
+python-dotenv==1.2.3
+gunicorn==26.2.0
 simple-websocket==1.1.0
 Flask-Admin==2.2.0
