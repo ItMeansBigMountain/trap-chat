@@ -94,6 +94,19 @@ and gating it would mean approving a plan before you can read it.
 
 Always read the plan for destroys before approving an apply.
 
+> **Currently unconfigured, verified 2026-09-09.** The GitHub API reports
+> `protection_rules: NONE` on `infra-prod-apply`, `backend-prod` and
+> `frontend-prod`, and applies have been observed running without pausing. So
+> the "one human step" this whole delivery model rests on **is not in effect**:
+> everything pushed to `main` reaches production unreviewed, including an
+> infrastructure apply, which is what can destroy the Azure Files share holding
+> the database. Fixing it is a one-time click per environment and needs repo
+> admin. Re-check with:
+>
+> ```
+> curl -s https://api.github.com/repos/ItMeansBigMountain/trap-chat/environments
+> ```
+
 ## Azure architecture and why
 
 - **Backend runs on Azure Container Apps (Consumption), not App Service.**
