@@ -17,6 +17,9 @@ export type FaceTrackerState = 'idle' | 'loading' | 'running' | 'failed';
 export interface FaceHandlers {
   onScore?: (score: number, live: number) => void;
   onState?: (state: FaceTrackerState, detail?: string) => void;
+  /** The landmarks behind that score, for drawing over the camera. Given out
+   *  per frame rather than stored, because they are only ever wanted live. */
+  onLandmarks?: (points: FacePoint[]) => void;
 }
 
 let visionPromise: Promise<any> | null = null;
@@ -98,6 +101,7 @@ export class FaceTracker {
         if (points?.length) {
           const live = this.run.add(points);
           this.handlers.onScore?.(this.run.result(), live.score);
+          this.handlers.onLandmarks?.(points);
         }
       } catch {
         // A dropped frame is not worth ending the match over.

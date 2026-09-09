@@ -229,6 +229,14 @@ with sync_playwright() as p:
         # they look would be dishonest, so the screen must not imply it.
         check("it says what it measures",
               "not how good it looks" in body(lx), one_line(lx, 260))
+        # The score was a number with nothing behind it. The lines are what
+        # make it checkable: you can see the midline sit on your nose, or not.
+        check("the measurement can be seen, and turned off",
+              lx.get_by_label("Hide the measurement").count() > 0
+              or lx.get_by_label("Show the measurement").count() > 0,
+              one_line(lx, 200))
+        check("the screen explains what the lines are",
+              "lines are the measurement" in body(lx), one_line(lx, 260))
         check("there is no vote in it",
               "Vote" not in body(lx) and "room decides" not in body(lx), one_line(lx, 200))
         # The hamburger has to be there during a match: that was the bug.

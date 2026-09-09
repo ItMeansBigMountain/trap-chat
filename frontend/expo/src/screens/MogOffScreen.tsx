@@ -25,6 +25,8 @@ import api from '../services/api';
 import call, { videoSupported } from '../services/webrtc';
 import faceTracker, { FaceTrackerState } from '../services/faceTracker';
 import { useAccent } from '../hooks/useAccent';
+import { FaceOverlay } from '../components/FaceOverlay';
+import { FacePoint } from '../services/faceScorer';
 import { T } from '../theme';
 
 const isWeb = Platform.OS === 'web';
@@ -65,6 +67,10 @@ export function MogOffScreen() {
   const [live, setLive] = useState(0);
   const [opponentScore, setOpponentScore] = useState(0);
   const [tracker, setTracker] = useState<FaceTrackerState>('idle');
+  // What the score is being taken from. On by default: a number with nothing
+  // behind it is not something anybody can argue with or trust.
+  const [showLines, setShowLines] = useState(true);
+  const [landmarks, setLandmarks] = useState<FacePoint[] | null>(null);
   const [trackerDetail, setTrackerDetail] = useState<string | undefined>();
   // Counted from a deadline, so navigating away and back does not restart it.
   const secondsLeft = useMatchClock(match?.id, duration);
@@ -101,6 +107,7 @@ export function MogOffScreen() {
           setLive(frame);
           scoreRef.current = running;
         },
+        onLandmarks: setLandmarks,
       });
     },
     [match?.id],
@@ -194,6 +201,20 @@ export function MogOffScreen() {
 
       <View style={styles.cameraWrap}>
         <Camera stream={localStream} onReady={attachTracker} />
+        <FaceOverlay points={landmarks} accent={accent} visible={showLines} />
+        {tracker === 'running' ? (
+          <TouchableOpacity
+            style={[styles.linesToggle, showLines && { borderColor: accent }]}
+            onPress={() => setShowLines((on) => !on)}
+            accessibilityRole="switch"
+            accessibilityState={{ checked: showLines }}
+            accessibilityLabel={showLines ? 'Hide the measurement' : 'Show the measurement'}
+          >
+            <Text style={[styles.linesToggleText, showLines && { color: accent }]}>
+              {showLines ? 'Lines on' : 'Lines off'}
+            </Text>
+          </TouchableOpacity>
+        ) : null}
         {tracker === 'loading' && (
           <View style={styles.overlay}>
             <ActivityIndicator color={accent} />
@@ -208,8 +229,10 @@ export function MogOffScreen() {
       </View>
 
       <Text style={styles.explain}>
-        This measures how symmetric your face is, not how good it looks. Face
-        the camera straight on: turning your head lowers the score.
+        This measures how symmetric your face is, not how good it looks. The
+        lines are the measurement: the centre line is the axis, and each pair
+        is compared against it. Face the camera straight on — turning your head
+        makes those pairs uneven, which is what lowers the score.
       </Text>
 
       {finished ? (
@@ -249,6 +272,18 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.6)',
   },
   overlayText: { color: T.textDim, fontSize: 13, textAlign: 'center', paddingHorizontal: 20 },
+  linesToggle: {
+    position: 'absolute',
+    right: 10,
+    top: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: T.border,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+  },
+  linesToggleText: { color: T.textDim, fontWeight: '800', fontSize: 11 },
   explain: { color: T.textDim, fontSize: 11, lineHeight: 16, textAlign: 'center', marginTop: 10 },
   forfeit: { marginTop: 12, paddingVertical: 14, borderRadius: T.radius, alignItems: 'center' },
   forfeitText: { fontWeight: '900', fontSize: 15 },

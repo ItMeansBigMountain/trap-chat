@@ -552,6 +552,26 @@ geometric property and is what this game was before it got a nickname.
   coming, where there is genuinely nothing to measure. `JUDGED_GAMES` is now
   Rap Battle alone.
 
+### Showing the measurement
+
+Mog Off draws the midline and the ten measured pairs over your own camera,
+toggled by **Lines on / Lines off** and on by default. The score was otherwise
+a number with nothing behind it: 71 out of 100, with no way to tell whether
+the model had found your face, found the lamp behind you, or simply disliked
+you. The lines make the claim checkable, and they make the advice actionable —
+you can watch the pairs go uneven as you turn your head.
+
+- `MIDLINE` and `PAIRS` are exported from `faceScorer.ts` and the overlay
+  draws those exact indices. A second copy would be a second thing to keep in
+  step, and the drawing would quietly stop describing the measurement.
+- It draws the measurement, not a 468-point mesh. A full mesh looks more
+  impressive and explains less.
+- The camera is mirrored, so the overlay mirrors too (`1 - x`) or the lines
+  sit on the wrong side of the face.
+- A headless browser's fake camera has no face in it, so the browser test
+  checks that the toggle and the explanation are there. The drawing itself is
+  visual and is not asserted on.
+
 ## The nav is always there
 
 Competitive matches used to render outside `ScreenFrame`, so a match had no

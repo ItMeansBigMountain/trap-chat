@@ -20,11 +20,11 @@ export interface FacePoint {
 
 // MediaPipe Face Landmarker indices. These sit on the facial midline, so the
 // line through them is the axis everything else is measured against.
-const MIDLINE = [10, 168, 1, 152];
+export const MIDLINE = [10, 168, 1, 152];
 
 // Left/right pairs that are mirror images on a symmetric face. Chosen to
 // spread across the face rather than cluster: eyes, brows, cheeks, mouth, jaw.
-const PAIRS: [number, number][] = [
+export const PAIRS: [number, number][] = [
   [33, 263],   // outer eye corners
   [133, 362],  // inner eye corners
   [70, 300],   // eyebrow outer
