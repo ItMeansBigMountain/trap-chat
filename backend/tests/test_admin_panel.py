@@ -61,11 +61,18 @@ def register(module, username, password="Str0ng-Pass!1"):
     return client
 
 
-def sign_in_to_admin(module, username, password="Str0ng-Pass!1"):
+# The Flask test client's own host. Every real browser sends this on a form
+# post; the panel refuses writes without it, which is the CSRF defence.
+OURS = "http://localhost"
+
+
+def sign_in_to_admin(module, username, password="Str0ng-Pass!1", origin=OURS):
     client = module.app.test_client()
+    headers = {"Origin": origin} if origin else {}
     return client, client.post(
         "/admin/login",
         data={"username": username, "password": password},
+        headers=headers,
         follow_redirects=False,
     )
 
@@ -342,3 +349,61 @@ def test_the_server_bookkeeping_is_not_handed_back(tmp_path):
     prefs = client.get("/api/auth/me").get_json()["user"]["preferences"]
     assert "token_version" not in prefs
     assert "seen_at" not in prefs
+
+
+# ------------------------------------------------------------------- CSRF
+
+def test_a_write_from_another_site_is_refused(tmp_path):
+    """The one that matters most. A cross-site POST that adds an AdminGrant
+    row would be total compromise, so a write has to have started here."""
+    module = load(tmp_path, admins="boss")
+    register(module, "boss")
+    client, _ = sign_in_to_admin(module, "boss")
+    assert client.get("/admin/").status_code == 200, "setup failed"
+
+    response = client.post(
+        "/admin/admingrant/new/",
+        data={"user": "1"},
+        headers={"Origin": "https://evil.example"},
+    )
+    assert response.status_code == 403, response.status_code
+
+    with module.app.app_context():
+        assert module.AdminGrant.query.count() == 0, "a cross-site post created an admin"
+
+
+def test_a_write_with_no_origin_at_all_is_refused(tmp_path):
+    """A browser always sends one on a form post, so this is a script."""
+    module = load(tmp_path, admins="boss")
+    register(module, "boss")
+    client, _ = sign_in_to_admin(module, "boss")
+
+    assert client.post("/admin/user/action/", data={"action": "ban"}).status_code == 403
+
+
+def test_signing_in_from_another_site_is_refused(tmp_path):
+    module = load(tmp_path, admins="boss")
+    register(module, "boss")
+
+    _, response = sign_in_to_admin(module, "boss", origin="https://evil.example")
+    assert response.status_code == 403
+
+
+def test_reading_is_not_blocked_by_the_origin_check(tmp_path):
+    """Only writes are checked. Gating reads would break following a link."""
+    module = load(tmp_path, admins="boss")
+    register(module, "boss")
+    client, _ = sign_in_to_admin(module, "boss")
+
+    for path in ADMIN_VIEWS:
+        assert client.get(path).status_code == 200, path
+
+
+def test_the_admin_cookie_cannot_travel_cross_site(tmp_path):
+    """SameSite=Strict is the layer the origin check backs up, and it is the
+    one that stops the request being made at all."""
+    module = load(tmp_path, admins="boss")
+    assert module.app.config["SESSION_COOKIE_SAMESITE"] == "Strict"
+    assert module.app.config["SESSION_COOKIE_HTTPONLY"] is True
+    # Its own name, so it cannot be confused with the app's auth cookie.
+    assert module.app.config["SESSION_COOKIE_NAME"] == "trapchat_admin"

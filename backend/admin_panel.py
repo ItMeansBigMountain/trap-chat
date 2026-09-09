@@ -148,11 +148,40 @@ def mount_admin(app, db, models, *, check_password, rate_limited, clear_rate_lim
 
     _is_admin = _granted
 
+    # Methods that change something. Anything else is safe to reach from a
+    # link and does not need the origin check below.
+    UNSAFE = {'POST', 'PUT', 'PATCH', 'DELETE'}
+
+    def same_origin():
+        """Did this request start on our own site?
+
+        The second CSRF layer, behind SameSite=Strict on the cookie. Strict is
+        the real defence and it is enough on every current browser, but this
+        panel can grant admin rights, and a cross-site POST that adds an
+        AdminGrant row is total compromise -- so it gets a defence that does
+        not depend on the browser honouring a cookie attribute.
+
+        Flask-Admin's actions and delete buttons are ordinary form posts, so
+        checking here covers all of them at once. Doing it per form would mean
+        remembering, and the cost of forgetting once is the whole product.
+        """
+        origin = request.headers.get('Origin')
+        if origin:
+            return origin.rstrip('/') == request.host_url.rstrip('/')
+        referer = request.headers.get('Referer')
+        if referer:
+            return referer.startswith(request.host_url)
+        # Neither header. A browser always sends one on a form post, so this
+        # is a script -- and a script has no session cookie to abuse anyway.
+        return False
+
     def guard():
         """Every route goes through here. A 404 rather than a 403, because a
         403 tells an attacker the panel exists and is worth attacking."""
         if not admin_enabled():
             abort(404)
+        if request.method in UNSAFE and not same_origin():
+            abort(403)
         if not _session_is_live():
             return redirect(url_for('admin_login', next=request.path))
         return None
@@ -161,6 +190,11 @@ def mount_admin(app, db, models, *, check_password, rate_limited, clear_rate_lim
     def admin_login():
         if not admin_enabled():
             abort(404)
+        if request.method in UNSAFE and not same_origin():
+            # Login CSRF is milder than the rest -- it can only sign somebody
+            # in as the attacker -- but the form is on the same door, so it
+            # gets the same lock.
+            abort(403)
         error = None
         if request.method == 'POST':
             # The same limiter the app's own sign-in uses. A login form that

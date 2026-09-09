@@ -161,3 +161,65 @@ def test_blocking_somebody_not_in_the_match_is_refused(tmp_path):
     response = me.post("/api/blocks", json={"match_id": match_id, "player_id": 99999})
 
     assert response.status_code == 400
+
+
+def test_you_cannot_report_a_match_you_were_never_in(tmp_path):
+    """Both endpoints checked the target was in the match and never that the
+    reporter was, so anyone could pile reports on anyone in any match id they
+    could guess. That was survivable while nothing read the reports. There is
+    a moderation queue now, and a queue full of invented reports is worse than
+    no queue at all."""
+    module = load(tmp_path)
+    one, two = guest(module), guest(module)
+    match_id = paired(module, one, two)
+    victim = players(module, match_id)[1]
+
+    outsider = guest(module)
+    response = outsider.post("/api/reports", json={
+        "match_id": match_id, "player_id": victim, "reason": "harassment",
+    })
+    assert response.status_code == 403, response.get_data(as_text=True)
+
+    with module.app.app_context():
+        assert module.Report.query.count() == 0, "a stranger filed a report"
+
+
+def test_you_cannot_block_through_a_match_you_were_never_in(tmp_path):
+    module = load(tmp_path)
+    one, two = guest(module), guest(module)
+    match_id = paired(module, one, two)
+    target = players(module, match_id)[1]
+
+    outsider = guest(module)
+    assert outsider.post("/api/blocks", json={
+        "match_id": match_id, "player_id": target,
+    }).status_code == 403
+
+
+def test_someone_who_was_there_still_can(tmp_path):
+    """The check must not break the feature it protects."""
+    module = load(tmp_path)
+    one, two = guest(module), guest(module)
+    match_id = paired(module, one, two)
+    theirs = players(module, match_id)[1]
+
+    response = one.post("/api/reports", json={
+        "match_id": match_id, "player_id": theirs, "reason": "harassment",
+    })
+    assert response.status_code == 200, response.get_data(as_text=True)
+
+
+def test_reporting_is_rate_limited(tmp_path):
+    """One script could otherwise fill the table and bury the real ones."""
+    module = load(tmp_path)
+    assert module.REPORT_MAX_PER_WINDOW < 100, "a ceiling that high is not a ceiling"
+    one, two = guest(module), guest(module)
+    match_id = paired(module, one, two)
+    theirs = players(module, match_id)[1]
+
+    codes = set()
+    for _ in range(module.REPORT_MAX_PER_WINDOW + 5):
+        codes.add(one.post("/api/reports", json={
+            "match_id": match_id, "player_id": theirs, "reason": "spam",
+        }).status_code)
+    assert 429 in codes, codes

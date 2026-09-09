@@ -332,6 +332,15 @@ the interesting part. One dependency, plus WTForms.
   only bites at the next sign-in is no ban at all -- a banned person has no
   reason to sign in again. Banning also revokes tokens. Stored in
   `preferences_json`, so no migration.
+- **CSRF is defended twice, because this panel can grant admin.** The Flask
+  session cookie is `SameSite=Strict`, `HttpOnly`, `Secure` in production and
+  named `trapchat_admin` -- it is used by nothing but the panel, so it can be
+  locked down without touching the app, whose own auth is a bearer token.
+  Strict is the real defence. Behind it, every unsafe method under `/admin`
+  must carry an `Origin` or `Referer` from our own host, which also covers
+  Flask-Admin's action and delete buttons without having to remember them one
+  at a time. A cross-site POST that adds an `admin_grants` row would be total
+  compromise, so it does not rest on one mechanism.
 - **The pipeline checks the lock.** `backend CICD` asks for `/admin/` and
   `/admin/user/` without a session after every deploy and fails the run on a
   200. An admin page reachable without signing in would hand a stranger every
@@ -768,6 +777,15 @@ listing this at all (see [MOBILE.md](MOBILE.md)).
   needs it is not going to go hunting through settings for it.
 - Reasons are a fixed set. Free text would need moderating before it could be
   read, which is a second problem.
+- **You have to have been in the match.** Both endpoints checked that the
+  person being reported was in the match named, and never that the reporter
+  was -- so anybody could pile reports on anybody, in any match id they could
+  guess, having never met them. That was survivable while nothing read the
+  reports; with a moderation queue it is not, because a queue full of invented
+  reports is worse than no queue. `caller_in_match()` is the check.
+- **Reporting is rate limited** (`REPORT_MAX_PER_WINDOW`), because it is
+  deliberately cheap for the person doing it and one script could otherwise
+  fill the table and bury the real ones.
 - Blocking a guest is weaker than blocking an account, because a guest gets a
   new session if they clear their browser. It holds for as long as that person
   is that person, which is the same guarantee everything else makes about

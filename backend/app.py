@@ -64,7 +64,25 @@ if DB_PATH.startswith('sqlite'):
         'pool_pre_ping': True,
     }
 app.config['SECRET_KEY'] = SECRET_KEY
+
+# The Flask session cookie is used by exactly one thing: the admin panel. That
+# means it can be locked down as hard as a staff tool deserves without any of
+# it reaching the app, whose own auth is a bearer token.
+#
+# SameSite=Strict is the CSRF defence. Without it, a page on any other site
+# could make an admin's browser POST to /admin -- deleting rows, banning
+# people, or granting itself an admin row, which is full compromise. Strict
+# means the cookie is not attached to a request that did not start on this
+# site at all. The cost is that following an /admin link from an email lands
+# you on the login page, which is a fair price for a staff screen.
+app.config['SESSION_COOKIE_NAME'] = 'trapchat_admin'
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Strict'
 FRONTEND_ORIGIN = os.environ.get('FRONTEND_ORIGIN')
+
+# Same production signal the app's own cookies use, so a local HTTP run still
+# works while the deployment is HTTPS-only.
+app.config['SESSION_COOKIE_SECURE'] = bool(FRONTEND_ORIGIN)
 if FRONTEND_ORIGIN:
     CORS(app, supports_credentials=True, origins=FRONTEND_ORIGIN)
 else:
@@ -2115,6 +2133,31 @@ def player_in_match(match_id, player_id):
     return MatchPlayer.query.filter_by(id=player_id, match_id=match_id).first()
 
 
+def caller_in_match(match_id):
+    """Were *you* in this match?
+
+    Both safety endpoints checked that the person being reported was in the
+    match named, and never that the reporter was. So anyone could report
+    anyone, in any match id they could guess, without ever having met them --
+    which is a way to pile reports on somebody who has done nothing. It
+    mattered less when nothing read the reports; there is a moderation queue
+    now, and a queue full of manufactured reports is worse than no queue.
+    """
+    if match_id is None:
+        return None
+    query = MatchPlayer.query.filter_by(match_id=match_id)
+    if request.user:
+        return query.filter_by(user_id=request.user.id).first()
+    guest = guest_session_id()
+    return query.filter_by(guest_session_id=guest).first() if guest else None
+
+
+# Reporting is deliberately cheap for the person doing it, so it needs a
+# ceiling: one script could otherwise fill the table and bury the real ones.
+REPORT_MAX_PER_WINDOW = 20
+REPORT_WINDOW_SECONDS = 3600
+
+
 def _record_block(target):
     """Block a MatchPlayer's identity, once."""
     user = request.user
@@ -2142,7 +2185,11 @@ def _record_block(target):
 def api_block():
     """Never match me with this person again."""
     data = request.get_json() or {}
-    target = player_in_match(data.get('match_id'), data.get('player_id'))
+    match_id = data.get('match_id')
+    if caller_in_match(match_id) is None:
+        return jsonify({'error': 'you were not in that match'}), 403
+
+    target = player_in_match(match_id, data.get('player_id'))
     if target is None:
         return jsonify({'error': 'no such player in that match'}), 400
 
@@ -2162,12 +2209,23 @@ def api_block():
 @guest_or_auth
 def api_report():
     """Flag somebody for review, and get away from them at the same time."""
+    retry_after = rate_limited('report', REPORT_MAX_PER_WINDOW, REPORT_WINDOW_SECONDS)
+    if retry_after is not None:
+        return jsonify({
+            'error': 'too many reports, try again later',
+            'retry_after': retry_after,
+        }), 429
+
     data = request.get_json() or {}
     reason = str(data.get('reason', 'other'))
     if reason not in REPORT_REASONS:
         return jsonify({'error': 'unknown reason'}), 400
 
-    target = player_in_match(data.get('match_id'), data.get('player_id'))
+    match_id = data.get('match_id')
+    if caller_in_match(match_id) is None:
+        return jsonify({'error': 'you were not in that match'}), 403
+
+    target = player_in_match(match_id, data.get('player_id'))
     if target is None:
         return jsonify({'error': 'no such player in that match'}), 400
 
