@@ -288,6 +288,34 @@ A test that inserts a `waiting` Match row directly has bypassed the endpoint
 that would have stamped it, so it must call `touch_match_presence()` itself or
 matchmaking will correctly refuse to offer its fictional opponent.
 
+## Video is a mesh, and everybody gets a tile
+
+`webrtc.ts` holds one `RTCPeerConnection` per peer, keyed by **socket id**.
+The socket id is the only identity signalling can be routed to -- a player row
+id cannot be delivered to -- so the roster (`peers`, `peer_joined`,
+`peer_left`) is expressed in those terms even though `player_joined` already
+existed.
+
+- **Signals are addressed.** `signal` honours a `to` field and delivers to
+  that socket alone. Broadcasting an offer into a room of three means two
+  people answer it, and both answers land on connections that were never
+  offered to them. An unaddressed signal still goes to the room, which is
+  correct in a room of two and keeps a pre-mesh client working.
+- **One end offers, decided by comparing the two socket ids.** Neither side
+  needs to know who arrived first, and both reach the same answer, so they
+  cannot collide.
+- **Subscribe before asking for the camera.** The roster is sent the instant
+  you join and the permission prompt takes long enough that it had already
+  been and gone: the *second* person into a room saw only themselves, every
+  time, while the first saw both. Connections still wait on `mediaReady`,
+  because one built before the camera exists carries no tracks.
+- **A tile per person, camera or not.** Turning your camera off removes your
+  face, not you. Two per row: it is what was asked for and the only column
+  count that leaves a face readable on a phone.
+- The mesh is capped at `MAX_VIDEO_PEERS` (6) and the reason is in
+  [SCALING.md](SCALING.md). Past the cap people keep their tile and lose their
+  video, which is honest; silently dropping them would not be.
+
 ## When a match ends
 
 Conceding and leaving are two different decisions, and the split matters.

@@ -385,6 +385,11 @@ class ApiService {
   onPlayerJoined(cb: (data: { match_id: number; player: NonNullable<Match['players']>[number] }) => void): () => void { this.socket?.on('player_joined', cb); return () => this.socket?.off('player_joined', cb); }
   onPlayerLeft(cb: (data: { match_id: number; player_id: number }) => void): () => void { this.socket?.on('player_left', cb); return () => this.socket?.off('player_left', cb); }
   onSignal(cb: (signal: WebRTCSignal) => void): () => void { this.socket?.on('signal', cb); return () => this.socket?.off('signal', cb); }
+  // The mesh keys on socket ids, so it needs the roster in those terms. The
+  // player_joined events carry a player row id, which nothing can be routed to.
+  onPeers(cb: (data: { match_id: number; you: string; peers: { peer_id: string; display_name: string | null }[] }) => void): () => void { this.socket?.on('peers', cb); return () => this.socket?.off('peers', cb); }
+  onPeerJoined(cb: (data: { match_id: number; peer_id: string; display_name: string | null }) => void): () => void { this.socket?.on('peer_joined', cb); return () => this.socket?.off('peer_joined', cb); }
+  onPeerLeft(cb: (data: { match_id: number; peer_id: string }) => void): () => void { this.socket?.on('peer_left', cb); return () => this.socket?.off('peer_left', cb); }
   onChatMessage(cb: (data: { match_id: number; from: string; text: string; timestamp: string }) => void): () => void { this.socket?.on('chat_message', cb); return () => this.socket?.off('chat_message', cb); }
   // The backend relays game actions back out on 'game_action', not 'game_state'.
   // Listening on 'game_state' silently never fires.

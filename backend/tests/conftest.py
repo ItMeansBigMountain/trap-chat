@@ -29,6 +29,11 @@ def reset_process_state():
         with app_module.MATCH_LAST_SEEN_LOCK:
             app_module.MATCH_LAST_SEEN.clear()
 
+    # A socket test client that is never disconnected stays in the roster, so
+    # the next file's presence counts include people from the last one.
+    if hasattr(app_module, "SOCKET_IDENTITIES"):
+        app_module.SOCKET_IDENTITIES.clear()
+
     # The module is imported once, so every test shares one database. A queue
     # left behind by an earlier test changes who the next one is paired with,
     # which makes matchmaking assertions fail only when the suite runs whole.
@@ -42,6 +47,10 @@ def reset_process_state():
             # the metrics tests depend on which files ran first. Blocks are
             # worse: one left behind silently changes who a later test is
             # allowed to be matched with.
+            # Rooms outlive the test that opened one, and every count of
+            # what is open then includes it.
+            for room in app_module.Room.query.all():
+                app_module.db.session.delete(room)
             for name in ("Event", "Block", "Report"):
                 model = getattr(app_module, name, None)
                 if model is not None:

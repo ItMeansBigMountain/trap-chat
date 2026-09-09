@@ -26,8 +26,8 @@ import {
 import { useApp } from '../context/AppContext';
 import api, { Presence } from '../services/api';
 import { GameSlug } from '../types';
-import call, { CallState, videoSupported } from '../services/webrtc';
-import { VideoStage } from '../components/VideoStage';
+import call, { CallState, PeerView, videoSupported } from '../services/webrtc';
+import { VideoGrid } from '../components/VideoGrid';
 import { Icon } from '../components/Icon';
 import { ReportSheet } from '../components/ReportSheet';
 import { useLayout } from '../hooks/useLayout';
@@ -74,7 +74,9 @@ export function SocialScreen() {
   const drag = useRef(new Animated.Value(0)).current;
   const scroller = useRef<ScrollView | null>(null);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
-  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+  // Everyone else in the room, not just whoever offered last. A single
+  // remote stream could only ever show one of them.
+  const [peers, setPeers] = useState<PeerView[]>([]);
   const [callState, setCallState] = useState<CallState>('idle');
   const [callDetail, setCallDetail] = useState<string | undefined>();
   const [muted, setMuted] = useState(false);
@@ -147,7 +149,7 @@ export function SocialScreen() {
     let cancelled = false;
     call.start(match.id, {
       onLocalStream: (stream) => !cancelled && setLocalStream(stream),
-      onRemoteStream: (stream) => !cancelled && setRemoteStream(stream),
+      onPeers: (next) => !cancelled && setPeers(next),
       onState: (nextState, detail) => {
         if (cancelled) return;
         setCallState(nextState);
@@ -157,7 +159,7 @@ export function SocialScreen() {
     return () => {
       cancelled = true;
       setLocalStream(null);
-      setRemoteStream(null);
+      setPeers([]);
       setCallState('idle');
       call.stop();
     };
@@ -170,9 +172,10 @@ export function SocialScreen() {
     const offChat = api.onChatMessage(({ from, text }) => add({ from, text }));
     const offJoined = api.onPlayerJoined(({ player }) => {
       add({ from: 'system', text: `${player.display_name} joined`, system: true });
-      // The peer already in the room makes the offer, so both sides never
-      // offer at once and collide.
-      if (wantsVideo && call.active) call.makeOffer();
+      // Negotiation is the mesh's job now. It hears the same arrival on
+      // peer_joined, opens the connection, and decides which end offers by
+      // comparing the two socket ids -- which is the only way that works once
+      // a room can hold more than two people.
     });
     const offLeft = api.onPlayerLeft(() =>
       add({ from: 'system', text: 'They left. Swipe up for someone new.', system: true }),
@@ -264,9 +267,10 @@ export function SocialScreen() {
   const stage = (
     <View style={styles.videoFrame}>
       {wantsVideo ? (
-        <VideoStage
+        <VideoGrid
           localStream={localStream}
-          remoteStream={remoteStream}
+          peers={peers}
+          myName={me}
           state={callState}
           detail={callDetail}
           muted={muted}
@@ -447,7 +451,7 @@ const styles = StyleSheet.create({
   from: { color: T.textDim, fontWeight: '700' },
   system: { color: T.textDim, fontSize: 12, fontStyle: 'italic' },
 
-  // Clear of VideoStage's mute and camera buttons, which sit at bottom 12.
+  // Clear of VideoGrid's mute and camera buttons, which sit at bottom 12.
   caption: { position: 'absolute', left: 14, right: 78, bottom: 60 },
   handle: { color: T.text, fontSize: 16, fontWeight: '800' },
   captionText: { color: T.text, fontSize: 13, marginTop: 5, lineHeight: 18 },

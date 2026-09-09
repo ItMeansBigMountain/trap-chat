@@ -38,6 +38,7 @@ Rough figures. Measure before acting on any of them.
 | 4 | Single replica ceiling | ~200–500 concurrent sockets | CPU saturates, latency climbs |
 | 5 | In-process coordination | The moment you add a replica | Players never match, rooms look empty |
 | 6 | Leaderboard full scan | ~100k rows | Slow board reads |
+| 7 | Video mesh is O(n²) per room | ~7 people in one room | Uploads saturate, tiles freeze |
 
 ## 1. TURN, before anything else
 
@@ -125,6 +126,26 @@ The migration, in order:
 silent: matchmaking appears to work and simply never pairs anyone. Three
 separate bug reports in this project's history were exactly that shape from
 in-process causes, and they are hard to see from the outside.
+
+## 7. The video mesh, and why it stops at six
+
+Group video is a full mesh: every participant holds one `RTCPeerConnection`
+per other participant and uploads their camera separately to each. Four people
+is three uploads each; ten would be nine, which no ordinary home connection
+sustains. Cost grows with the square of the room while the *server* cost stays
+zero, which is exactly the trade that makes this app cheap to run — and
+exactly why it cannot be stretched.
+
+`MAX_VIDEO_PEERS = 6` in `webrtc.ts` is where it stops. Past it everybody
+still gets a tile with their name on it and no video is negotiated for them,
+because a room that silently dropped people would be worse than one that
+admits its limit. Group Chat's `max_players` is 20, so this is reachable.
+
+The answer beyond that is an SFU: each participant uploads once, the server
+fans out. That means media through a server for the first time, which is a
+real bill and the end of "the backend only relays the handshake". Not worth it
+for a pilot; the thing to measure first is whether rooms of seven happen at
+all.
 
 ## 6. Leaderboards
 

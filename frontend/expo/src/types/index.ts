@@ -133,8 +133,13 @@ export interface WebRTCSignal {
   offer?: RTCSessionDescriptionInit;
   answer?: RTCSessionDescriptionInit;
   candidate?: RTCIceCandidateInit;
-  from: string;
-  to: string;
+  /** Stamped by the server, so it is absent on the way out and present on
+   *  the way in. It was declared required, which is why every send needed a
+   *  cast to get past it. */
+  from?: string;
+  /** Which peer this is for. Absent means the whole room, which is only
+   *  correct when the room holds two people. */
+  to?: string;
   match_id: number;
 }
 

@@ -2093,6 +2093,13 @@ def on_socket_connect(auth=None):
 def on_socket_disconnect(*args):
     identity = SOCKET_IDENTITIES.pop(request.sid, None) or {}
     for match_id in list(identity.get('matches', ())):
+        # However the socket went, the mesh connection to it is dead and its
+        # tile is showing a frozen frame. Say so before deciding whether this
+        # counts as leaving the match, which is a separate question.
+        socketio.emit('peer_left', {
+            'match_id': match_id,
+            'peer_id': request.sid,
+        }, to=f'match_{match_id}')
         match = db.session.get(Match, match_id)
         # A socket drops for all sorts of reasons that are not a decision to
         # leave: Socket.IO reconnects on any blip, a backgrounded tab is cut
@@ -2166,6 +2173,25 @@ def require_socket_player(match_id):
     return player
 
 
+def match_peers(match_id, *, exclude=None):
+    """Every socket currently in this match, named.
+
+    A mesh needs one connection per peer, so peers have to be addressable
+    individually. The socket id is the only identity that signalling can be
+    routed to, so it is the one the mesh is keyed on -- a player row id cannot
+    be delivered to.
+    """
+    peers = []
+    for sid, identity in list(SOCKET_IDENTITIES.items()):
+        if sid == exclude or match_id not in identity.get('matches', ()):
+            continue
+        peers.append({
+            'peer_id': sid,
+            'display_name': identity.get('names', {}).get(match_id),
+        })
+    return peers
+
+
 @socketio.on('join_match')
 def on_join_match(data):
     match_id = data.get('match_id') if isinstance(data, dict) else None
@@ -2173,15 +2199,31 @@ def on_join_match(data):
     if not player:
         return
     join_room(f'match_{match_id}')
-    SOCKET_IDENTITIES.setdefault(request.sid, {}).setdefault('matches', set()).add(match_id)
+    identity = SOCKET_IDENTITIES.setdefault(request.sid, {})
+    identity.setdefault('matches', set()).add(match_id)
+    identity.setdefault('names', {})[match_id] = player.display_name
     touch_match_presence(match_id)
     if player.left_at is not None:
         player.left_at = None  # rejoined
         db.session.commit()
     emit('joined_match', {'match_id': match_id})
+    # Who is already here, and which of these sockets is you. Both halves are
+    # needed: the mesh opens one connection per peer, and it decides which end
+    # makes the offer by comparing the two ids, so a peer that does not know
+    # its own cannot take part without colliding.
+    emit('peers', {
+        'match_id': match_id,
+        'you': request.sid,
+        'peers': match_peers(match_id, exclude=request.sid),
+    })
     emit('player_joined', {
         'match_id': match_id,
         'player': {'id': player.id, 'display_name': player.display_name},
+    }, to=f'match_{match_id}', include_self=False)
+    emit('peer_joined', {
+        'match_id': match_id,
+        'peer_id': request.sid,
+        'display_name': player.display_name,
     }, to=f'match_{match_id}', include_self=False)
 
 
@@ -2194,10 +2236,17 @@ def on_leave_match(data):
     leave_room(f'match_{match_id}')
     identity = SOCKET_IDENTITIES.get(request.sid) or {}
     identity.get('matches', set()).discard(match_id)
+    identity.get('names', {}).pop(match_id, None)
     _mark_player_left(match_id, identity, reason='left')
     emit('player_left', {
         'match_id': match_id,
         'player_id': player.id,
+    }, to=f'match_{match_id}')
+    # The mesh keys on the socket, so it needs the socket back to tear the
+    # connection down and drop the tile.
+    emit('peer_left', {
+        'match_id': match_id,
+        'peer_id': request.sid,
     }, to=f'match_{match_id}')
 
 
@@ -2252,6 +2301,17 @@ def on_signal(data):
         return
     signal = dict(data)
     signal['from'] = request.sid
+    target = data.get('to')
+    if target:
+        # A mesh addresses each peer. Broadcasting an offer into a room of
+        # four means three people answer it, and every one of those answers
+        # lands on a connection that was never offered to them.
+        if target not in {peer['peer_id'] for peer in match_peers(match_id)}:
+            return
+        emit('signal', signal, to=target)
+        return
+    # No target: a two-person room, where the room is the peer. Kept so a
+    # client from before the mesh still connects.
     emit('signal', signal, to=f'match_{match_id}', include_self=False)
 
 
