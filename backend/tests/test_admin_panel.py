@@ -407,3 +407,76 @@ def test_the_admin_cookie_cannot_travel_cross_site(tmp_path):
     assert module.app.config["SESSION_COOKIE_HTTPONLY"] is True
     # Its own name, so it cannot be confused with the app's auth cookie.
     assert module.app.config["SESSION_COOKIE_NAME"] == "trapchat_admin"
+
+
+# --------------------------------------------- behind a TLS-terminating proxy
+
+def test_signing_in_works_through_a_tls_terminating_proxy(tmp_path):
+    """The bug this check shipped with, and the reason it is pinned here.
+
+    Container Apps terminates TLS at its ingress, so inside the container the
+    scheme is http while the browser sent Origin: https://... The two never
+    matched and every admin form post returned 403 -- the panel was completely
+    unusable in production the moment the CSRF check went live.
+
+    Nothing caught it: the Flask test client speaks the same scheme as the app
+    so Origin matched exactly, and the deploy check only ever sent GETs. This
+    test is the one that would have.
+    """
+    module = load(tmp_path, admins="boss")
+    register(module, "boss")
+    client = module.app.test_client()
+
+    response = client.post(
+        "/admin/login",
+        data={"username": "boss", "password": "Str0ng-Pass!1"},
+        headers={
+            # Exactly what the browser and the ingress send between them.
+            "Origin": "https://trap-chat-api.example.azurecontainerapps.io",
+            "X-Forwarded-Proto": "https",
+            "X-Forwarded-Host": "trap-chat-api.example.azurecontainerapps.io",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 302, response.get_data(as_text=True)
+    assert client.get("/admin/").status_code == 200
+
+
+def test_a_forged_forwarded_host_does_not_open_the_door(tmp_path):
+    """The headers are trusted for our own scheme, never to widen who counts
+    as us. An Origin that is not the forwarded host is still refused."""
+    module = load(tmp_path, admins="boss")
+    register(module, "boss")
+
+    response = module.app.test_client().post(
+        "/admin/login",
+        data={"username": "boss", "password": "Str0ng-Pass!1"},
+        headers={
+            "Origin": "https://evil.example",
+            "X-Forwarded-Proto": "https",
+            "X-Forwarded-Host": "trap-chat-api.example.azurecontainerapps.io",
+        },
+    )
+    assert response.status_code == 403
+
+
+def test_a_proxied_write_inside_the_panel_works(tmp_path):
+    """Not just login -- Flask-Admin's own forms post the same way."""
+    module = load(tmp_path, admins="boss")
+    register(module, "boss")
+    register(module, "colleague")
+    proxy = {
+        "Origin": "https://trap-chat-api.example.azurecontainerapps.io",
+        "X-Forwarded-Proto": "https",
+        "X-Forwarded-Host": "trap-chat-api.example.azurecontainerapps.io",
+    }
+    client = module.app.test_client()
+    client.post("/admin/login", data={"username": "boss", "password": "Str0ng-Pass!1"},
+                headers=proxy)
+
+    with module.app.app_context():
+        target = module.User.query.filter_by(username="colleague").first().id
+
+    response = client.post("/admin/admingrant/new/", data={"user": str(target)},
+                           headers=proxy, follow_redirects=False)
+    assert response.status_code != 403, "a legitimate admin write was refused"

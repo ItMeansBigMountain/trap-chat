@@ -152,6 +152,30 @@ def mount_admin(app, db, models, *, check_password, rate_limited, clear_rate_lim
     # link and does not need the origin check below.
     UNSAFE = {'POST', 'PUT', 'PATCH', 'DELETE'}
 
+    def our_origins():
+        """Every spelling of "this site" that a browser might legitimately send.
+
+        Container Apps terminates TLS at its ingress, so inside the container
+        `request.scheme` is http and `request.host_url` is http://... while the
+        browser sent Origin: https://... -- they never match, and *every* admin
+        form post 403s. That is not theoretical: it took the panel down in
+        production the moment this check shipped, and neither the test suite
+        (same-scheme test client) nor the deploy check (GETs only) saw it.
+
+        So the forwarded headers are what count, with the direct values kept
+        as a fallback for running without a proxy in front.
+        """
+        candidates = set()
+        host = request.headers.get('X-Forwarded-Host') or request.host
+        # A chain of proxies appends, so the first entry is what the browser
+        # actually spoke to.
+        proto = (request.headers.get('X-Forwarded-Proto') or request.scheme).split(',')[0].strip()
+        if host:
+            candidates.add(f'{proto}://{host.split(",")[0].strip()}')
+            candidates.add(f'{request.scheme}://{host.split(",")[0].strip()}')
+        candidates.add(request.host_url.rstrip('/'))
+        return {c.rstrip('/') for c in candidates if c}
+
     def same_origin():
         """Did this request start on our own site?
 
@@ -165,12 +189,13 @@ def mount_admin(app, db, models, *, check_password, rate_limited, clear_rate_lim
         checking here covers all of them at once. Doing it per form would mean
         remembering, and the cost of forgetting once is the whole product.
         """
+        mine = our_origins()
         origin = request.headers.get('Origin')
         if origin:
-            return origin.rstrip('/') == request.host_url.rstrip('/')
+            return origin.rstrip('/') in mine
         referer = request.headers.get('Referer')
         if referer:
-            return referer.startswith(request.host_url)
+            return any(referer.startswith(f'{o}/') or referer == o for o in mine)
         # Neither header. A browser always sends one on a form post, so this
         # is a script -- and a script has no session cookie to abuse anyway.
         return False

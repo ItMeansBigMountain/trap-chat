@@ -341,12 +341,24 @@ the interesting part. One dependency, plus WTForms.
   Flask-Admin's action and delete buttons without having to remember them one
   at a time. A cross-site POST that adds an `admin_grants` row would be total
   compromise, so it does not rest on one mechanism.
+- **The origin check has to understand the proxy.** Container Apps terminates
+  TLS at its ingress, so inside the container `request.scheme` is `http` while
+  the browser sent `Origin: https://...`. Comparing against `request.host_url`
+  therefore refused *every* legitimate admin form post, and the panel was
+  unusable in production the moment the CSRF check shipped. `our_origins()`
+  reads `X-Forwarded-Proto` and `X-Forwarded-Host`. Those headers set what
+  counts as *us*; an `Origin` that is not one of them is still refused, so
+  this widens nothing.
 - **The pipeline checks the lock.** `backend CICD` asks for `/admin/` and
   `/admin/user/` without a session after every deploy and fails the run on a
   200. An admin page reachable without signing in would hand a stranger every
   account, report and match in the product, so it is not something to notice
   later. A 404 (panel disabled) is reported as such rather than passing in
-  silence, because a panel that quietly stopped existing looks identical.
+  silence, because a panel that quietly stopped existing looks identical. It
+  also POSTs the login form same-origin and fails on a 403: GETs alone missed
+  the proxy bug above, because a locked panel and an unusable one look the
+  same from a GET. The cross-site POST is checked in the same step, so a fix
+  for one cannot quietly undo the other.
 - **A failure to mount must never take the backend down.** The import and the
   mount are both wrapped: matches and chat are the product, this is a staff
   tool.

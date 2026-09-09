@@ -8,4 +8,4 @@ budget_contact_emails   = []
 # Who can reach /admin. These must be real Trap Chat accounts: the panel
 # checks the name is on this list AND that the account's own password is
 # right. Empty would disable the panel entirely.
-admin_usernames = "affan"
+admin_usernames = "affan,root"

@@ -218,7 +218,28 @@ jobs:
             fi
           done
 
-          echo "- Admin panel: enabled and locked (${url}/admin/login)" >> "$GITHUB_STEP_SUMMARY"
+          # A real same-origin POST, because GETs alone missed the bug that
+          # took the panel down: behind a TLS-terminating ingress the app sees
+          # http while the browser sends https, so the CSRF origin check
+          # refused every legitimate form post. Wrong credentials are fine --
+          # what is being tested is that the form is reachable at all, so
+          # anything except 403 passes.
+          post=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30             -X POST -H "Origin: ${url}" -H "Referer: ${url}/admin/login"             -d 'username=ci-probe&password=not-a-real-password'             "${url}/admin/login")
+          echo "same-origin login POST=${post}"
+          if [ "$post" = "403" ]; then
+            echo "::error title=Admin login is unusable::a same-origin POST to /admin/login was refused, so nobody can sign in"
+            exit 1
+          fi
+
+          # And the cross-site version must still be refused, or the fix for
+          # the above went too far and took the CSRF defence with it.
+          evil=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30             -X POST -H "Origin: https://evil.example"             -d 'username=ci-probe&password=not-a-real-password'             "${url}/admin/login")
+          if [ "$evil" != "403" ]; then
+            echo "::error title=Admin CSRF check is not working::a cross-site POST returned ${evil}, expected 403"
+            exit 1
+          fi
+
+          echo "- Admin panel: enabled, locked, and signable-in (${url}/admin/login)" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Post-deployment integration tests
         run: |
