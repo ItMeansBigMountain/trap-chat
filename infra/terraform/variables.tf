@@ -58,3 +58,17 @@ variable "tags" {
     owner          = "hermes"
   }
 }
+
+variable "admin_usernames" {
+  description = <<-EOT
+    Comma-separated Trap Chat usernames allowed into /admin. These must be
+    real accounts: the panel checks the username is on this list *and* that
+    the account's own password is correct.
+
+    Empty (the default) disables the panel entirely -- every /admin route
+    returns 404 rather than 403, so a misconfigured deploy leaves no door to
+    find. Set it to turn the panel on.
+  EOT
+  type        = string
+  default     = ""
+}

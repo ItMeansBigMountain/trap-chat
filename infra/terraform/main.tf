@@ -139,6 +139,18 @@ resource "azurerm_container_app" "backend" {
         name  = "PORT"
         value = "8080"
       }
+      env {
+        # Who can reach /admin. Empty means the panel does not exist at all,
+        # which is the default on purpose: an unconfigured deploy should have
+        # no admin surface rather than an unlocked one.
+        #
+        # Deliberately an environment variable and not a database flag. A row
+        # is one careless endpoint away from being set by somebody else, and a
+        # self-promoted admin on an app full of strangers' cameras is the whole
+        # product. Changing this needs an approved infrastructure apply.
+        name  = "ADMIN_USERNAMES"
+        value = var.admin_usernames
+      }
 
       volume_mounts {
         name = "backend-data"

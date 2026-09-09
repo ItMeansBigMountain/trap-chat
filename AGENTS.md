@@ -288,6 +288,50 @@ A test that inserts a `waiting` Match row directly has bypassed the endpoint
 that would have stamped it, so it must call `touch_match_presence()` itself or
 matchmaking will correctly refuse to offer its fictional opponent.
 
+## The admin panel
+
+Flask-Admin at `/admin`, which is Django's `/admin` for a Flask + SQLAlchemy
+app: it generates model CRUD from the models we already have. Building one by
+hand would have been weeks of screens, and none of that work would have been
+the interesting part. One dependency, plus WTForms.
+
+- **Who is an admin comes from the environment, never the database.**
+  `ADMIN_USERNAMES` is a comma-separated list set by Terraform
+  (`var.admin_usernames`). There is deliberately no `is_admin` column: a flag
+  in a row is one careless endpoint away from being set by somebody else, and
+  a self-promoted admin on an app full of strangers' cameras is the whole
+  product. Changing it takes an approved infrastructure apply.
+- **Empty means the panel does not exist.** Every `/admin` route 404s rather
+  than 403s, because a 403 confirms there is something worth attacking. This
+  is the default, so an unconfigured deploy has no admin surface at all.
+- **An admin still signs in with their own account password**, and the panel
+  checks both that the name is on the list and that the password is right.
+  Failures give one message either way, or the form becomes a way to
+  enumerate the staff list. The same rate limiter as sign-in applies.
+- **Admin sessions are a Flask session cookie, not the app's JWT**, and last
+  `ADMIN_SESSION_HOURS` (8). A token that leaks from a phone must not carry
+  admin rights with it.
+- **The guard is a `before_request` as well as per-view**, so a view added
+  later without its own `is_accessible` is still covered.
+- **Bans are enforced in `User.from_token` as well as at sign-in.** A ban that
+  only bites at the next sign-in is no ban at all -- a banned person has no
+  reason to sign in again. Banning also revokes tokens. Stored in
+  `preferences_json`, so no migration.
+- **A failure to mount must never take the backend down.** The import and the
+  mount are both wrapped: matches and chat are the product, this is a staff
+  tool.
+- The Leaderboard view is deletable on purpose. Test rows land on the real
+  board and the only other way to remove one is downloading and re-uploading
+  the whole SQLite file, which rolls back whatever happened meanwhile.
+- **The Reports view is the moderation queue** that was listed as missing.
+  Reports were being recorded and nothing read them, which is close to not
+  having reporting at all.
+
+**What it cannot do: read chats.** `on_chat_message` relays messages between
+sockets and stores nothing, so there is no history to show. Retaining messages
+is a privacy decision and a schema change, not an oversight -- it should be
+taken deliberately, with a retention period, if moderation needs it.
+
 ## Account security
 
 What was already right: bcrypt via flask-bcrypt, `SECRET_KEY` a 64-character

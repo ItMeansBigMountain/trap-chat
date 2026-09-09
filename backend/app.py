@@ -239,6 +239,10 @@ class User(db.Model):
         except (TypeError, ValueError):
             return 0
 
+    @property
+    def is_banned(self):
+        return bool(self.prefs().get('banned'))
+
     def revoke_tokens(self):
         """Sign out everywhere. The caller needs a fresh token afterwards."""
         prefs = self.prefs()
@@ -264,6 +268,12 @@ class User(db.Model):
             # the same 0 an untouched account has -- so nobody is signed out
             # by deploying this, only by revoking deliberately.
             if int(payload.get('tv', 0)) != user.token_version:
+                return None
+            # A banned account is not a signed-in account. Checked here rather
+            # than only at sign-in, or the ban would not take effect until
+            # they happened to sign in again -- which a banned person has no
+            # reason to do.
+            if user.is_banned:
                 return None
             return user
         except Exception:
@@ -904,6 +914,10 @@ def api_login():
         return jsonify({'error': 'invalid credentials'}), 401
     if not u.check_password(password):
         return jsonify({'error': 'invalid credentials'}), 401
+    if u.is_banned:
+        # Said plainly. "Invalid credentials" would send somebody to reset a
+        # password that works fine, and they would try again tomorrow.
+        return jsonify({'error': 'this account has been suspended'}), 403
     clear_rate_limit('login')
     token = u.to_token()
     # Returned in the body as well as the cookie: this frontend is on a
@@ -2531,6 +2545,38 @@ def on_chat_message(data):
         'text': text,
         'timestamp': datetime.utcnow().isoformat() + 'Z',
     }, to=f'match_{match_id}', include_self=False)
+
+
+# -------------------------
+# Admin panel
+# -------------------------
+# Mounted last, so it sees every model. Does nothing at all unless
+# ADMIN_USERNAMES is set, which is deliberate: an unconfigured deploy should
+# have no admin surface rather than an unlocked one. See admin_panel.py.
+try:
+    from admin_panel import mount_admin
+
+    ADMIN_MOUNTED = mount_admin(
+        app,
+        db,
+        {
+            'User': User,
+            'Report': Report,
+            'Block': Block,
+            'Match': Match,
+            'Room': Room,
+            'Leaderboard': Leaderboard,
+            'Event': Event,
+        },
+        check_password=lambda user, raw: user.check_password(raw),
+        rate_limited=rate_limited,
+        clear_rate_limit=clear_rate_limit,
+    )
+except Exception:  # pragma: no cover - the app matters more than its admin
+    # A panel that fails to mount must not take the backend down with it.
+    # Matches, chat and sign-in are the product; this is a staff tool.
+    app.logger.exception('admin panel not mounted')
+    ADMIN_MOUNTED = False
 
 
 # -------------------------
