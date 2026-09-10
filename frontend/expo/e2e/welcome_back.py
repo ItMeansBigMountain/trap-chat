@@ -46,8 +46,12 @@ def register(browser, username, password="pw12345678"):
     ).new_page()
     page.goto(APP, wait_until="networkidle", timeout=90000)
     page.wait_for_timeout(2500)
-    page.get_by_label("Username").fill(username)
-    page.get_by_label("Password").fill(password)
+    # Exact, always. get_by_label matches substrings, so "Password" also finds
+    # the register form's "Password cannot be reset" warning and the fill dies
+    # on a strict-mode violation. That is how this suite broke: a label added
+    # to a different screen made a lookup here ambiguous.
+    page.get_by_label("Username", exact=True).fill(username)
+    page.get_by_label("Password", exact=True).fill(password)
     page.get_by_text("Create account", exact=True).click()
     page.wait_for_timeout(4500)
     return page

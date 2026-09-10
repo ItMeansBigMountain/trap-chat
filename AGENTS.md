@@ -958,6 +958,14 @@ terraform -chdir=infra/terraform validate
   the browser and the response is discarded before any code sees it. Answer the
   OPTIONS preflight too. Both failures look identical to a feature that simply
   does not work: the screen stays empty and nothing is logged.
+- **`get_by_label` matches substrings, so always pass `exact=True`.** This has
+  now broken two suites in two different ways: "New password" also found the
+  "Save new password" button, and adding a "Password cannot be reset" warning
+  to the register form made `get_by_label("Password")` ambiguous in a suite
+  that had not been touched in weeks. Both fail as a strict-mode violation
+  thirty seconds later, in a place that looks unrelated. **Adding an
+  `accessibilityLabel` anywhere can break a lookup somewhere else**, so run
+  every browser suite before pushing, not the ones that look affected.
 - **The e2e suites print to a cp1252 console on Windows.** The app is full of
   emoji, so every `check()` encodes its line to ASCII first. Printing raw
   killed a whole run with a `UnicodeEncodeError` that read like a product
